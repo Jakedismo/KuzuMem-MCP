@@ -1,7 +1,6 @@
 import {
-  RequestHandlerExtra,
-  ServerNotification,
-  ServerRequest,
+  // ServerNotification,
+  // ServerRequest,
 } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { ToolHandler } from '../types';
 import { MemoryService } from '../../services/memory.service';

@@ -1,15 +1,8 @@
-import {
-  RequestHandlerExtra,
-  ServerNotification,
-  ServerRequest,
-} from '@modelcontextprotocol/sdk/shared/protocol.js';
-import { ProgressNotification } // Assuming ProgressNotification is the correct type for notifications/progress params
-from '@modelcontextprotocol/sdk/types.js'; // Or specific schema import if available
-import { MemoryService } from '../services/memory.service.js';
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/types.js';
+import { MemoryService } from '../../services/memory.service';
 import {
   EnrichedRequestHandlerExtra,
-  McpProgressNotification,
-} from '../types/sdk-custom.js';
+} from '../types/sdk-custom';
 
 // TODO: Define a more specific type for toolArgs if possible
 type ToolArgs = any;

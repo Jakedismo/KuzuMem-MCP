@@ -103,7 +103,7 @@ function createMcpServer(): Server {
     const tools = MEMORY_BANK_MCP_TOOLS.map((tool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: tool.parameters || { type: 'object', properties: {}, required: [] },
+      inputSchema: tool.inputSchema || { type: 'object', properties: {}, required: [] },
     }));
 
     return { tools };
@@ -257,7 +257,7 @@ app.get('/tools/list', async (req: Request, res: Response) => {
   const tools = MEMORY_BANK_MCP_TOOLS.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    inputSchema: tool.parameters || { type: 'object', properties: {}, required: [] },
+    inputSchema: tool.inputSchema || { type: 'object', properties: {}, required: [] },
   }));
 
   res.json({ tools });

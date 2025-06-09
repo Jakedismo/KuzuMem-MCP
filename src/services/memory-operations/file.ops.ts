@@ -1,6 +1,7 @@
-import { KuzuDBClient } from '@mcp/ai-assistant-lib/kuzu';
-import { EnrichedRequestHandlerExtra } from '@mcp/ai-assistant-lib/mcp';
-import * as toolSchemas from '@mcp/ai-assistant-lib/tool-schemas';
+import { KuzuDBClient } from '../../db/kuzu';
+import { MemoryService } from '../memory.service';
+import * as toolSchemas from '../../mcp/schemas/tool-schemas';
+import { EnrichedRequestHandlerExtra } from '../../mcp/types/sdk-custom';
 import { z } from 'zod';
 
 // Based on toolSchemas.FileNodeSchema for database insertion
@@ -124,24 +125,9 @@ export async function addFileOp(
   };
 
   try {
-    // For ON MATCH, we need a different updated_at
-    const currentIsoTime = new Date().toISOString();
-    const paramsForExecution = { ...queryParams };
-    if (/* we knew it was a match */ false) { // This logic is tricky with MERGE alone.
-        // MERGE doesn't tell us if it matched or created easily without another query.
-        // For simplicity, we'll use the same `updated_at` for both create and match path here,
-        // which is fine as it's `new Date().toISOString()` for ON CREATE and we'd want that for ON MATCH too.
-        // If we wanted different `updated_at` for create vs match, this would be more complex.
-        // The current query structure correctly sets updated_at to the current time for both paths.
-    }
-    paramsForExecution.updated_at = currentIsoTime; // Ensure updated_at is current for both create and match
-    if (paramsForExecution.created_at === nodeProperties.updated_at) { // if created_at was set to currentIsoTime
-        paramsForExecution.created_at = currentIsoTime;
-    }
-
-    const queryResult = await kuzuClient.executeQuery(cypherQuery, paramsForExecution);
+    const queryResult = await kuzuClient.executeQuery(cypherQuery, queryParams);
     mcpContext.logger.debug(
-      { queryResult, params: paramsForExecution },
+      { queryResult, params: queryParams },
       'Kuzu query executed for addFileOp.',
     );
 
@@ -174,7 +160,6 @@ export async function addFileOp(
             },
             'Failed to parse metrics_json from DB result for file',
           );
-          // Proceed without metrics if parsing fails, or handle as critical error
         }
       }
 
@@ -182,7 +167,7 @@ export async function addFileOp(
         id: dbRecord.id,
         name: dbRecord.name,
         path: dbRecord.path,
-        language: dbRecord.language || null, // Ensure null if empty string or undefined from DB
+        language: dbRecord.language || null,
         metrics: metrics,
         content_hash: dbRecord.content_hash || null,
         mime_type: dbRecord.mime_type || null,
@@ -195,7 +180,7 @@ export async function addFileOp(
       mcpContext.logger.info({ fileId: fileNode.id, filePath: fileNode.path }, `File node ${fileNode.id} processed successfully.`);
       return fileNode;
     } else {
-      mcpContext.logger.warn({ queryParamsSent: paramsForExecution, result: queryResult }, 'Kuzu query for addFileOp executed but returned no result or an empty result set.');
+      mcpContext.logger.warn({ queryParamsSent: queryParams, result: queryResult }, 'Kuzu query for addFileOp executed but returned no result or an empty result set.');
       return null;
     }
   } catch (error) {
@@ -240,18 +225,17 @@ export async function associateFileWithComponentOp(
       );
       return true;
     } else {
-      // If MATCH fails (no component or file found), executeQuery might still return an empty array
       mcpContext.logger.warn(
         `Failed to associate Component ${componentId} with File ${fileId}. Component or File not found, or they don't match repository/branch.`,
         { queryParams }
       );
-      return false; // Indicates nodes not found or relationship not actively formed by this call
+      return false;
     }
   } catch (error) {
     mcpContext.logger.error(
       { error, query: cypherQuery, params: queryParams },
       'Error executing associateFileWithComponentOp Cypher query'
     );
-    throw error; // Rethrow to be handled by the service layer
+    throw error;
   }
 }

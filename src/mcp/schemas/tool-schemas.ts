@@ -541,7 +541,7 @@ export const ListNodesByLabelInputSchema = z.object({
 // Output will be an array of nodes. The structure of these nodes will vary.
 // We can use a generic object schema, or define specific schemas if we know the common node types.
 // For now, a generic approach, assuming nodes at least have an 'id'.
-const GenericNodeSchema = z
+export const GenericNodeSchema = z
   .object({
     id: z.string(),
     // Potentially other common properties like 'name', or allow any

@@ -1,6 +1,7 @@
-import { KuzuDBClient } from '@mcp/ai-assistant-lib/kuzu';
-import { EnrichedRequestHandlerExtra } from '@mcp/ai-assistant-lib/mcp';
-import * as toolSchemas from '@mcp/ai-assistant-lib/tool-schemas';
+import { KuzuDBClient } from '../../db/kuzu';
+import { MemoryService } from '../memory.service';
+import * as toolSchemas from '../../mcp/schemas/tool-schemas';
+import { EnrichedRequestHandlerExtra } from '../../mcp/types/sdk-custom';
 import { z } from 'zod';
 
 export async function addTagOp(
