@@ -13,8 +13,9 @@ export async function setupTestDB(testDbFilename: string): Promise<string> {
   const projectRoot = path.resolve(process.cwd()); // Or use a fixed relative path like __dirname, ../../..
   const specificTestDbPath = path.join(projectRoot, testDbFilename);
 
-  // THIS IS THE KEY LINE: Set the environment variable that the server's db/config.ts will read.
-  process.env.DB_FILENAME = specificTestDbPath;
+  // THIS IS THE KEY FIX: Set only the filename, not the full path.
+  // The KuzuDBClient will construct the full path by joining clientProjectRoot + DB_RELATIVE_DIR + DB_FILENAME
+  process.env.DB_FILENAME = testDbFilename;
 
   try {
     const stats = await fs.stat(specificTestDbPath).catch(() => null);
