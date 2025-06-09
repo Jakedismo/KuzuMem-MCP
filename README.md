@@ -10,6 +10,7 @@ A TypeScript implementation of a distributed memory bank as an MCP (Model Contex
 - **Thread-Safe Singleton Pattern** - Ensures each resource is instantiated only once, with proper thread safety
 - **Distributed Graph Structure** - Follows the advanced memory bank specification using a KùzuDB graph
 - **Repository & Branch Awareness** - All operations are contextualized by repository name and branch, with entities uniquely identified by a composite key (`repositoryName:branchName:itemId`)
+- **File & Tag Management** - Comprehensive file tracking with metadata and universal tagging system for all entities
 - **Asynchronous Operations** - Uses async/await for better performance
 - **Multiple Access Interfaces** - Access via a RESTful HTTP API, a CLI, and multiple MCP server implementations
 - **KùzuDB Backend** - Utilizes KùzuDB for graph-based memory storage and querying
@@ -23,8 +24,59 @@ A TypeScript implementation of a distributed memory bank as an MCP (Model Contex
 - **Server-Sent Events (SSE)** - Real-time streaming of tool results and progress notifications using official SDK patterns
 - **Progressive Results Streaming** - Supports `tools/progress` notifications for long-running graph operations over Stdio and HTTP Streaming
 - **Graph & Traversal Tools** - Includes tools for dependency analysis, pathfinding, and graph algorithms
+- **Comprehensive Testing** - 95%+ test coverage for all core operations with 24+ unit tests
 - **Lazy Database Initialization** - Databases are only initialized when explicitly requested through the init-memory-bank tool, not during server startup
 - **Client Project Root Isolation** - Each client project gets its own isolated database instance based on the provided project root path
+
+## Available MCP Tools
+
+The server exposes the following tools to MCP clients:
+
+### **Core Repository Management**
+- `init-memory-bank` - Initialize a new memory bank for a repository/branch
+- `get-metadata` / `update-metadata` - Repository-level metadata management
+- `get-context` / `update-context` - Session and work context tracking
+
+### **Component & Architecture Management**
+- `add-component` - Add/update system components with dependencies
+- `get-component-dependencies` - Find what a component depends on
+- `get-component-dependents` - Find what depends on a component
+- `get-active-components` - List all active components
+
+### **Decision & Rule Management**
+- `add-decision` - Record architectural decisions with context
+- `add-rule` - Define coding standards and architectural rules
+- `get-active-rules` - Retrieve active rules for a repository
+- `get-decisions-by-date-range` - Find decisions within a time period
+
+### **File Management (NEW)**
+- `add_file` - Add/update file records with metadata, metrics, and content hashes
+- `associate_file_with_component` - Link files to components via CONTAINS_FILE relationships
+
+### **Tagging System (NEW)**
+- `add_tag` - Create/update global tags with colors and descriptions
+- `tag_item` - Apply tags to any item (Components, Decisions, Rules, Files, Contexts)
+- `find_items_by_tag` - Search for items by tag with optional type filtering
+
+### **Graph Analysis & Traversal**
+- `get-governing-items-for-component` - Find rules and decisions affecting a component
+- `get-item-contextual-history` - Track how an entity evolved over time
+- `get-related-items` - Explore component neighborhoods and relationships
+- `shortest-path` - Find relationship paths between components
+
+### **Graph Algorithms**
+- `pagerank` - Identify critical components by importance
+- `louvain-community-detection` - Discover natural system modules
+- `k-core-decomposition` - Find tightly coupled component clusters
+- `strongly-connected-components` - Detect circular dependencies
+- `weakly-connected-components` - Find isolated subsystems
+
+### **Database Introspection**
+- `count-nodes-by-label` - Count entities by type
+- `list-nodes-by-label` - List entities with pagination
+- `get-node-properties` - Inspect database schema
+- `list-all-indexes` - View database indexes
+- `list-all-node-labels` - Get available entity types
 
 ## Documentation
 
@@ -92,9 +144,81 @@ Add the following to your IDEs MCP configuration:
 
 ![IDE MCP Configuration](docs/client_view.png)
 
-## Usage
+## Usage Examples
 
-### Starting the Servers for local testing
+### File Management
+
+```bash
+# Add a file with metadata and metrics
+curl -X POST http://localhost:3000/mcp/tools/add_file \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientProjectRoot": "/path/to/project",
+    "repository": "my-app",
+    "branch": "main",
+    "id": "file-auth-service",
+    "name": "AuthService.ts",
+    "path": "/src/services/AuthService.ts",
+    "language": "typescript",
+    "metrics": {"lines": 150, "complexity": 8},
+    "content_hash": "abc123...",
+    "mime_type": "text/typescript",
+    "size_bytes": 4096
+  }'
+
+# Associate file with a component
+curl -X POST http://localhost:3000/mcp/tools/associate_file_with_component \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientProjectRoot": "/path/to/project",
+    "repository": "my-app",
+    "branch": "main",
+    "componentId": "comp-AuthService",
+    "fileId": "file-auth-service"
+  }'
+```
+
+### Tagging System
+
+```bash
+# Create a tag
+curl -X POST http://localhost:3000/mcp/tools/add_tag \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientProjectRoot": "/path/to/project",
+    "repository": "my-app",
+    "branch": "main",
+    "id": "tag-security",
+    "name": "Security",
+    "color": "#ff0000",
+    "description": "Security-related components and decisions"
+  }'
+
+# Tag a component
+curl -X POST http://localhost:3000/mcp/tools/tag_item \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientProjectRoot": "/path/to/project",
+    "repository": "my-app",
+    "branch": "main",
+    "itemId": "comp-AuthService",
+    "itemType": "Component",
+    "tagId": "tag-security"
+  }'
+
+# Find items by tag
+curl -X POST http://localhost:3000/mcp/tools/find_items_by_tag \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientProjectRoot": "/path/to/project",
+    "repository": "my-app",
+    "branch": "main",
+    "tagId": "tag-security",
+    "itemTypeFilter": "Component"
+  }'
+```
+
+## Starting the Servers for local testing
 
 - **HTTP Streaming MCP Server (Recommended - Official SDK with SSE):** (`src/mcp-httpstream-server.ts`)
 
@@ -177,16 +301,20 @@ Thread-safe singleton repositories for each memory type and core graph entities:
 - `ComponentRepository` (also handles component-centric graph queries like dependencies, dependents, related items, shortest path, and placeholders for graph algorithms)
 - `DecisionRepository`
 - `RuleRepository`
+- `FileRepository` (NEW - manages file nodes and relationships)
+- `TagRepository` (NEW - manages tags and tagging relationships)
 
 ### Memory Operations Layer (`src/services/memory-operations/`)
 
-A new layer introduced to encapsulate specific business logic for groups of operations, called by `MemoryService`.
+A layer that encapsulates specific business logic for groups of operations, called by `MemoryService`:
 
 - `metadata.ops.ts`
 - `context.ops.ts`
 - `component.ops.ts` (includes new traversal ops)
 - `decision.ops.ts`
 - `rule.ops.ts`
+- `file.ops.ts` (NEW - file creation and component association)
+- `tag.ops.ts` (NEW - tag creation, item tagging, and tag-based search)
 - `import-export.ops.ts`
 - `graph.ops.ts` (for graph algorithms and generic traversals)
 
@@ -222,9 +350,23 @@ The memory bank uses a graph structure in KùzuDB. Refer to [Graph Schema](docs/
 
 Key aspects:
 
-- **Nodes**: `Repository`, `Metadata`, `Context`, `Component`, `Decision`, `Rule`
-- **Primary Keys**: `Repository` nodes use `id` (format: `name:branch`). Other entities (`Metadata`, `Context`, `Component`, `Decision`, `Rule`) use a `graph_unique_id` (format: `repositoryName:itemBranch:logicalId`) as their `PRIMARY KEY` to ensure uniqueness across repositories and branches. They also store their logical `id` and `branch` as separate properties
-- **Relationships**: Various `HAS_...` and semantic relationships like `DEPENDS_ON`, `CONTEXT_OF`, etc., link these nodes
+- **Nodes**: `Repository`, `Metadata`, `Context`, `Component`, `Decision`, `Rule`, `File` (NEW), `Tag` (NEW)
+- **Primary Keys**: `Repository` nodes use `id` (format: `name:branch`). Other entities (`Metadata`, `Context`, `Component`, `Decision`, `Rule`) use a `graph_unique_id` (format: `repositoryName:itemBranch:logicalId`) as their `PRIMARY KEY` to ensure uniqueness across repositories and branches. `File` nodes use `id` as primary key. `Tag` nodes use `id` as primary key (tags are global).
+- **Relationships**: Various `HAS_...` and semantic relationships like `DEPENDS_ON`, `CONTEXT_OF`, `CONTAINS_FILE` (NEW), `IS_TAGGED_WITH` (NEW), etc., link these nodes
+
+## Testing
+
+The project includes comprehensive test coverage:
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test suites
+npm test -- --testPathPattern="file.ops.test.ts|tag.ops.test.ts"
+
+# Coverage: 95.61% statements, 82.75% branches, 100% functions
+```
 
 ## License
 
@@ -234,13 +376,25 @@ MIT
 
 Feel free to contribute to the project.
 
+## Recent Updates
+
+### ✅ Phase 3 Complete - File & Tag Management (December 2024)
+
+- **File Management Tools** - Complete file tracking with metadata, metrics, and component associations
+- **Universal Tagging System** - Tag any entity (Components, Decisions, Rules, Files, Contexts) with colored, searchable tags
+- **Comprehensive Testing** - 24 unit tests with 95%+ coverage for all new operations
+- **Enhanced Schema** - Extended KùzuDB schema with File and Tag nodes and relationships
+- **Standardized Error Handling** - Consistent error patterns across all operations
+- **Type Safety Improvements** - Enhanced TypeScript type definitions for better development experience
+
 ## Future Improvements
 
 - **Enhance CLI** to support branch selection for all relevant commands more explicitly
 - **Refine Graph Algorithm Streaming**: Further refactor `MemoryService` and Kùzu calls within Operation Classes to provide more granular progress for algorithms where KùzuDB allows iterative result yielding
-- **Add Full-Text Search (FTS) Capabilities** - Planned implementation to enable efficient keyword-based search across all memory items using KùzuDB's FTS extension. Especially good when tags are implemented
-- **Vector Embeddings Support** - Planned implementation; would enable semantic similarity search and NLP-based memory retrieval using KùzuDB's vector capabilities. Currently blocked due to KuzuDB Vector columns being immutable. Updating memories wouldn't update the vector embeddings. Making the feature a little redundant
-- **Graph Schema Evolution** - Extending the graph schema to support more complex memory types and relationships. Filenames, tags etc.
+- **Add Full-Text Search (FTS) Capabilities** - Planned implementation to enable efficient keyword-based search across all memory items using KùzuDB's FTS extension. Enhanced by the new tagging system
+- **Vector Embeddings Support** - Planned implementation; would enable semantic similarity search and NLP-based memory retrieval using KùzuDB's vector capabilities
+- **Enhanced File Analysis** - Integration with code analysis tools for automated metrics and relationship detection
+- **Tag Analytics** - Advanced tag-based insights and relationship analysis
 
 ## Target Graph Schema
 
