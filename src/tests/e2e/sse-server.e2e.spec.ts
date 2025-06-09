@@ -375,7 +375,7 @@ describe('MCP SSE Server E2E Tests (Legacy)', () => {
       const defaultEnv = {
         PORT: String(STREAM_PORT),
         DEBUG: '3', // Increase debug level for more verbose logging
-        DB_FILENAME: dbPathForTest,
+        DB_FILENAME: path.basename(dbPathForTest), // Use only the filename, not full path
         ...envVars,
       };
 
