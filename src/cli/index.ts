@@ -12,14 +12,14 @@ let memoryService: MemoryService;
 function createMockContext(): EnrichedRequestHandlerExtra {
   return {
     logger: console,
-    session: {},
+    session: {
+      clientProjectRoot: '',
+      repository: '',
+      branch: 'main',
+    },
     sendProgress: async () => {},
     memoryService: null as any, // Will be set after initialization
-    signal: new AbortController().signal,
-    requestId: 'cli-request',
-    sendNotification: async () => {},
-    sendRequest: async () => ({ id: 'cli', jsonrpc: '2.0', result: {} }),
-  } as EnrichedRequestHandlerExtra;
+  };
 }
 
 async function initializeMemoryServiceInstance(): Promise<void> {

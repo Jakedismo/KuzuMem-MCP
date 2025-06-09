@@ -7,10 +7,6 @@ import { EnrichedRequestHandlerExtra } from '../../types/sdk-custom';
  */
 function createMockContext(): EnrichedRequestHandlerExtra {
   return {
-    signal: new AbortController().signal,
-    requestId: 'mock-request-id',
-    sendNotification: async () => {},
-    sendRequest: async () => ({ type: 'response' as const, id: '', result: {} }),
     logger: {
       debug: () => {},
       info: () => {},
@@ -18,8 +14,9 @@ function createMockContext(): EnrichedRequestHandlerExtra {
       error: () => {},
     },
     session: {
-      sessionId: 'mock-session-id',
-      serverVersion: '1.0.0',
+      clientProjectRoot: '',
+      repository: '',
+      branch: 'main',
     },
     sendProgress: async () => {},
     memoryService: {} as MemoryService,

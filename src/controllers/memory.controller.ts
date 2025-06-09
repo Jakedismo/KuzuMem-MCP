@@ -76,12 +76,12 @@ export class MemoryController {
    */
   private createMockContext(): EnrichedRequestHandlerExtra {
     return {
-      signal: new AbortController().signal,
-      requestId: 'controller-mock-request',
-      sendNotification: async () => {},
-      sendRequest: async () => ({ id: 'mock' } as any),
       logger: console,
-      session: {},
+      session: {
+        clientProjectRoot: '',
+        repository: '',
+        branch: 'main',
+      },
       sendProgress: async () => {},
       memoryService: this.memoryService
     };

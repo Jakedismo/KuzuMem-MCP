@@ -137,7 +137,6 @@ function createMcpServer(): Server {
         adaptedToolHandlers,
         effectiveClientProjectRoot,
         undefined, // No progress handler for HTTP transport
-        debugLog,
       );
 
       if (toolResult !== null) {

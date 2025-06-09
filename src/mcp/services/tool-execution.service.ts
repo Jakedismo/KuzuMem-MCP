@@ -2,11 +2,14 @@ import {
   // ServerNotification,
   // ServerRequest,
 } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import { ToolHandler } from '../types';
 import { MemoryService } from '../../services/memory.service';
-// import { ProgressHandler } from '../streaming/progress-handler'; // Removed
-import { createAugmentedContext } from '../utils/context-utils.js';
-import { EnrichedRequestHandlerExtra } from '../types/sdk-custom.js';
+import { EnrichedRequestHandlerExtra } from '../types/sdk-custom';
+
+// Align with tool handlers signature
+type SdkToolHandler = (
+  params: any,
+  context: EnrichedRequestHandlerExtra,
+) => Promise<any>;
 
 /**
  * Singleton service for executing tools with progress support
@@ -38,48 +41,51 @@ export class ToolExecutionService {
   }
 
   /**
-   * Execute a tool with progress support
+   * Execute a tool
    */
   public async executeTool(
     toolName: string,
     toolArgs: any,
-    toolHandlers: Record<string, ToolHandler>,
-    clientProjectRoot: string, // Will be part of EnrichedRequestHandlerExtra.session
-    sdkContext: RequestHandlerExtra<ServerRequest, ServerNotification>,
-    // progressHandler is removed
-    // debugLog is removed, use logger from augmentedContext
+    toolHandlers: Record<string, SdkToolHandler>,
+    clientProjectRoot: string,
+    progressHandler?: any,
   ): Promise<any> {
     const memoryService = await this.ensureMemoryService();
 
-    // Create the augmented context
-    const augmentedContext = createAugmentedContext(
-      sdkContext,
-      toolArgs,
+    // Create context that matches what tool handlers expect
+    const context: EnrichedRequestHandlerExtra = {
+      logger: {
+        debug: (msg: string, ...args: any[]) => console.debug(`[DEBUG] ${msg}`, ...args),
+        info: (msg: string, ...args: any[]) => console.info(`[INFO] ${msg}`, ...args),
+        warn: (msg: string, ...args: any[]) => console.warn(`[WARN] ${msg}`, ...args),
+        error: (msg: string, ...args: any[]) => console.error(`[ERROR] ${msg}`, ...args),
+      },
+      session: {
+        clientProjectRoot,
+        repository: toolArgs.repository || '',
+        branch: toolArgs.branch || 'main',
+      },
+      sendProgress: async (progress: any) => {
+        if (progressHandler && typeof progressHandler.progress === 'function') {
+          progressHandler.progress(progress);
+        }
+      },
       memoryService,
-      clientProjectRoot
-      // progressHandler is no longer passed
-    );
+    };
 
     try {
       const handler = toolHandlers[toolName];
       if (!handler) {
         const errorMsg = `Tool execution handler not implemented for '${toolName}'.`;
-        // The call to augmentedContext.sendProgress is removed from here.
-        // The server will send a final error response based on this return.
-        augmentedContext.logger.warn(`Tool handler not found: ${toolName}`); // Log it internally
+        context.logger.warn(`Tool handler not found: ${toolName}`);
         return { error: errorMsg };
       }
 
-      // Execute the tool handler with the new augmented context.
-      // Tool handlers are now expected to have the signature:
-      // `async (params: SomeParams, context: EnrichedRequestHandlerExtra)`
-      return await handler(toolArgs, augmentedContext);
+      // Execute the tool handler with the correct signature
+      return await handler(toolArgs, context);
     } catch (err: any) {
       const errorMsg = `Error executing tool '${toolName}': ${err.message || String(err)}`;
-      augmentedContext.logger.error(errorMsg, err.stack);
-
-      // The call to augmentedContext.sendProgress is removed from here.
-      // The server will send a final error response based on this return.
+      context.logger.error(errorMsg, err.stack);
       return { error: errorMsg };
     }
   }

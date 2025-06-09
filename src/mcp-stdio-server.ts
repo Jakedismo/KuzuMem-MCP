@@ -11,7 +11,6 @@ import { ToolExecutionService } from './mcp/services/tool-execution.service';
 // import { createProgressHandler } from './mcp/streaming/progress-handler'; // Removed
 // import { StdioProgressTransport } from './mcp/streaming/stdio-transport'; // Removed
 import { toolHandlers } from './mcp/tool-handlers';
-import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // Added for sdkContext type
 import { McpTool } from './mcp/types'; // Import McpTool
 
 // Determine Client Project Root at startup (for context only, not for DB initialization)
@@ -99,11 +98,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request, sdkContext) => {
     const toolResult = await toolExecutionService.executeTool(
       toolName,
       toolArgs,
-      toolHandlers, // Use original toolHandlers
+      toolHandlers,
       effectiveClientProjectRoot,
-      sdkContext, // Pass sdkContext
-      // progressHandler, // Removed
-      // debugLog, // Removed
+      undefined, // No progress handler for stdio
     );
 
     // The toolResult is now the direct result from the tool execution.

@@ -1,5 +1,3 @@
-import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import type { ServerRequest, ServerNotification } from '@modelcontextprotocol/sdk/types.js';
 import type { MemoryService } from '../../services/memory.service';
 
 /**
@@ -21,14 +19,15 @@ export interface McpProgressNotification {
 }
 
 /**
- * Represents the context object passed to MCP tool handlers, augmented with
- * properties like logger, session, and sendProgress that are expected to be
- * available at runtime.
+ * Simplified context object for tool handlers
  */
-export interface EnrichedRequestHandlerExtra
-  extends RequestHandlerExtra<ServerRequest, ServerNotification> {
+export interface EnrichedRequestHandlerExtra {
   logger: Pick<Console, 'debug' | 'info' | 'warn' | 'error'>;
-  session: Record<string, any>;
+  session: {
+    clientProjectRoot: string;
+    repository: string;
+    branch: string;
+  };
   sendProgress: (progress: McpProgressNotification) => Promise<void>;
   memoryService: MemoryService;
 }

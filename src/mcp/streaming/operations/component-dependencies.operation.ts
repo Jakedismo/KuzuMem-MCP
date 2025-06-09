@@ -37,12 +37,12 @@ export class ComponentDependenciesOperation {
 
       // Create mock context for service calls
       const mockContext: EnrichedRequestHandlerExtra = {
-        signal: new AbortController().signal,
-        requestId: 'streaming-operation',
-        sendNotification: async () => {},
-        sendRequest: async () => ({ id: 'mock' } as any),
         logger: console,
-        session: {},
+        session: {
+          clientProjectRoot,
+          repository: repositoryName,
+          branch,
+        },
         sendProgress: async () => {},
         memoryService: memoryService
       };

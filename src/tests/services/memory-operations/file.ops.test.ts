@@ -26,11 +26,11 @@ describe('File Operations', () => {
         warn: jest.fn(),
         error: jest.fn(),
       },
-      signal: new AbortController().signal,
-      requestId: 'test-request-id',
-      sendNotification: jest.fn(),
-      sendRequest: jest.fn(),
-      session: {},
+      session: {
+        clientProjectRoot: '/test/project',
+        repository: 'test-repo',
+        branch: 'main',
+      },
       sendProgress: jest.fn(),
       memoryService: {} as any,
     };
