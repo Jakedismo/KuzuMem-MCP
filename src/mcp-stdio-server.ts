@@ -8,9 +8,11 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { MEMORY_BANK_MCP_TOOLS } from './mcp';
 import { ToolExecutionService } from './mcp/services/tool-execution.service';
-import { createProgressHandler } from './mcp/streaming/progress-handler';
-import { StdioProgressTransport } from './mcp/streaming/stdio-transport';
+// import { createProgressHandler } from './mcp/streaming/progress-handler'; // Removed
+// import { StdioProgressTransport } from './mcp/streaming/stdio-transport'; // Removed
 import { toolHandlers } from './mcp/tool-handlers';
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // Added for sdkContext type
+import { McpTool } from './mcp/types'; // Import McpTool
 
 // Determine Client Project Root at startup (for context only, not for DB initialization)
 const detectedClientProjectRoot = process.cwd();
@@ -32,52 +34,6 @@ function debugLog(level: number, message: string, data?: any): void {
   }
 }
 
-// Adapter to convert SdkToolHandler to ToolHandler format
-function adaptSdkToolHandler(
-  sdkHandler: (params: any, context: any, memoryService: any) => Promise<any>,
-): (
-  toolArgs: any,
-  memoryService: any,
-  progressHandler?: any,
-  clientProjectRoot?: string,
-) => Promise<any> {
-  return async (toolArgs, memoryService, progressHandler, clientProjectRoot) => {
-    // Create a mock context that matches EnrichedRequestHandlerExtra
-    const context = {
-      logger: {
-        debug: (msg: string, ...args: any[]) =>
-          debugLog(3, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-        info: (msg: string, ...args: any[]) =>
-          debugLog(2, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-        warn: (msg: string, ...args: any[]) =>
-          debugLog(1, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-        error: (msg: string, ...args: any[]) =>
-          debugLog(0, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-      },
-      session: {
-        clientProjectRoot,
-        repository: toolArgs.repository,
-        branch: toolArgs.branch,
-      },
-      sendProgress: async (progress: any) => {
-        if (progressHandler) {
-          progressHandler.progress(progress);
-        }
-      },
-      memoryService,
-    };
-
-    // Call the SDK handler with adapted parameters
-    return sdkHandler(toolArgs, context, memoryService);
-  };
-}
-
-// Adapt all tool handlers
-const adaptedToolHandlers: Record<string, any> = {};
-for (const [toolName, handler] of Object.entries(toolHandlers)) {
-  adaptedToolHandlers[toolName] = adaptSdkToolHandler(handler);
-}
-
 // Create the server instance
 const server = new Server(
   {
@@ -93,27 +49,29 @@ const server = new Server(
   },
 );
 
-const progressTransport = new StdioProgressTransport(debugLog);
+// const progressTransport = new StdioProgressTransport(debugLog); // Removed
 
 // Set up the list tools handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   debugLog(1, `Returning tools/list with ${MEMORY_BANK_MCP_TOOLS.length} tools`);
 
-  const tools = MEMORY_BANK_MCP_TOOLS.map((tool) => ({
+  const tools = MEMORY_BANK_MCP_TOOLS.map((tool: McpTool) => ({
     name: tool.name,
     description: tool.description,
-    inputSchema: tool.parameters || { type: 'object', properties: {}, required: [] },
+    inputSchema: tool.inputSchema || { type: 'object', properties: {}, required: [] }, // Use inputSchema
+    outputSchema: tool.outputSchema, // Add outputSchema
+    annotations: tool.annotations,   // Add annotations
   }));
 
   return { tools };
 });
 
 // Set up the call tool handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request, sdkContext) => { // Added sdkContext
   const { name: toolName, arguments: toolArgs = {} } = request.params;
-  const requestId = 'id' in request ? String(request.id) : 'unknown';
+  const requestId = 'id' in request ? String(request.id) : ('unknownRequestId'); // Ensure requestId is always a string
 
-  debugLog(1, `Handling tools/call for tool: ${toolName}`);
+  debugLog(1, `Handling tools/call for tool: ${toolName} with sdkSessionId: ${sdkContext.sessionId}`);
 
   const toolDefinition = MEMORY_BANK_MCP_TOOLS.find((t) => t.name === toolName);
   if (!toolDefinition) {
@@ -133,66 +91,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   try {
-    let capturedFinalResult: any = null;
-    let capturedIsError: boolean = false;
-
-    const progressHandler = createProgressHandler(
-      requestId,
-      {
-        sendNotification: (payload: object, eventName?: string) => {
-          // If this is the final response, capture it
-          if (eventName === 'mcpResponse') {
-            const responsePayload = payload as any;
-            if (responsePayload.result) {
-              capturedFinalResult = responsePayload.result;
-              capturedIsError = false;
-            } else if (responsePayload.error) {
-              capturedFinalResult = responsePayload.error;
-              capturedIsError = true;
-            }
-          }
-          // Send progress notifications through the stdio transport
-          progressTransport.sendNotification(payload, eventName);
-        },
-      },
-      debugLog,
-    );
+    // All progressHandler and capturedFinalResult logic is removed.
+    // SDK will handle progress notifications via sdkContext.sendNotification.
 
     const toolExecutionService = await ToolExecutionService.getInstance();
 
     const toolResult = await toolExecutionService.executeTool(
       toolName,
       toolArgs,
-      adaptedToolHandlers,
+      toolHandlers, // Use original toolHandlers
       effectiveClientProjectRoot,
-      progressHandler,
-      debugLog,
+      sdkContext, // Pass sdkContext
+      // progressHandler, // Removed
+      // debugLog, // Removed
     );
 
-    // If we captured a final result from the progress handler, use that
-    if (capturedFinalResult !== null) {
+    // The toolResult is now the direct result from the tool execution.
+    // If toolResult is null or has an error property, it indicates an error.
+    // Otherwise, it's a success.
+    if (toolResult?.error) {
+      // Tool reported an error
       return {
-        content: [{ type: 'text', text: JSON.stringify(capturedFinalResult, null, 2) }],
-        isError: capturedIsError,
+        // structuredContent should not be set or be undefined
+        content: [{ type: 'text', text: JSON.stringify(toolResult.error, null, 2) }], // Or toolResult.error.message if error is an object
+        isError: true,
       };
     }
 
-    // For tools that use progress handlers but don't send final response,
-    // or tools that return results directly
     if (toolResult === null) {
+      // Tool executed successfully but returned no specific data (e.g., fire and forget)
       return {
-        content: [{ type: 'text', text: 'Tool executed successfully' }],
+        // structuredContent should not be set or be undefined
+        content: [{ type: 'text', text: 'Tool executed successfully with no specific result content.' }],
+        isError: false,
       };
     }
 
-    // For tools that don't use progress or return results directly
+    // Success case with structured content
     return {
-      content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }],
-      isError: !!toolResult?.error,
+      structuredContent: toolResult, // toolResult is the direct JSON object
+      content: toolResult.message && typeof toolResult.message === 'string' ? [{ type: 'text', text: toolResult.message }] : [],
+      isError: false,
     };
   } catch (error: any) {
+    // This catch block handles errors thrown by pre-execution logic or if executeTool itself throws
     debugLog(0, `Error in CallToolRequest handler: ${error.message}`, error.stack);
     return {
+      // structuredContent should not be set or be undefined
       content: [{ type: 'text', text: `Error executing tool: ${error.message}` }],
       isError: true,
     };

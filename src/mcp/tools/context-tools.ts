@@ -8,7 +8,7 @@ export const getContextTool: McpTool = {
   name: 'get-context',
   description:
     'Get the latest or all context entries for a repository. Use latest=true for the most recent context.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -37,7 +37,7 @@ export const getContextTool: McpTool = {
     idempotentHint: true,
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       context: {
@@ -55,7 +55,7 @@ export const getContextTool: McpTool = {
 export const updateContextTool: McpTool = {
   name: 'update-context',
   description: 'Update context for a repository with new information',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -96,7 +96,7 @@ export const updateContextTool: McpTool = {
     idempotentHint: false,
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       success: {

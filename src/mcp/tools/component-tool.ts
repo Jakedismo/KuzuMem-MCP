@@ -7,7 +7,7 @@ import { McpTool } from '../types';
 export const addComponentTool: McpTool = {
   name: 'add-component',
   description: "Add a new component to a repository's memory bank",
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -52,7 +52,7 @@ export const addComponentTool: McpTool = {
     idempotentHint: false,
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       success: {

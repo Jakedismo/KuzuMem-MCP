@@ -21,6 +21,8 @@ import path from 'path';
 import { ToolExecutionService } from './mcp/services/tool-execution.service';
 import { toolHandlers } from './mcp/tool-handlers';
 import { MEMORY_BANK_MCP_TOOLS } from './mcp/tools';
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // Added for sdkContext type
+import { McpTool } from './mcp/types'; // Import McpTool
 
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -32,52 +34,6 @@ function debugLog(level: number, message: string): void {
   if (debugLevel >= level) {
     console.error(`[DEBUG-${level}] ${new Date().toISOString()} ${message}`);
   }
-}
-
-// Adapter to convert SdkToolHandler to ToolHandler format
-function adaptSdkToolHandler(
-  sdkHandler: (params: any, context: any, memoryService: any) => Promise<any>,
-): (
-  toolArgs: any,
-  memoryService: any,
-  progressHandler?: any,
-  clientProjectRoot?: string,
-) => Promise<any> {
-  return async (toolArgs, memoryService, progressHandler, clientProjectRoot) => {
-    // Create a mock context that matches EnrichedRequestHandlerExtra
-    const context = {
-      logger: {
-        debug: (msg: string, ...args: any[]) =>
-          debugLog(3, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-        info: (msg: string, ...args: any[]) =>
-          debugLog(2, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-        warn: (msg: string, ...args: any[]) =>
-          debugLog(1, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-        error: (msg: string, ...args: any[]) =>
-          debugLog(0, args.length > 0 ? `${msg} ${JSON.stringify(args)}` : msg),
-      },
-      session: {
-        clientProjectRoot,
-        repository: toolArgs.repository,
-        branch: toolArgs.branch,
-      },
-      sendProgress: async (progress: any) => {
-        if (progressHandler) {
-          progressHandler.progress(progress);
-        }
-      },
-      memoryService,
-    };
-
-    // Call the SDK handler with adapted parameters
-    return sdkHandler(toolArgs, context, memoryService);
-  };
-}
-
-// Adapt all tool handlers
-const adaptedToolHandlers: Record<string, any> = {};
-for (const [toolName, handler] of Object.entries(toolHandlers)) {
-  adaptedToolHandlers[toolName] = adaptSdkToolHandler(handler);
 }
 
 // Create an MCP server factory function
@@ -100,21 +56,23 @@ function createMcpServer(): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     debugLog(1, `Returning tools/list with ${MEMORY_BANK_MCP_TOOLS.length} tools`);
 
-    const tools = MEMORY_BANK_MCP_TOOLS.map((tool) => ({
+    const tools = MEMORY_BANK_MCP_TOOLS.map((tool: McpTool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: tool.parameters || { type: 'object', properties: {}, required: [] },
+      inputSchema: tool.inputSchema || { type: 'object', properties: {}, required: [] }, // Use inputSchema
+      outputSchema: tool.outputSchema, // Add outputSchema
+      annotations: tool.annotations,   // Add annotations
     }));
 
     return { tools };
   });
 
   // Set up the call tool handler
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, sdkContext) => { // Added sdkContext
     const { name: toolName, arguments: toolArgs = {} } = request.params;
-    const requestId = (request as any).id?.toString() || randomUUID();
+    // const requestId = (request as any).id?.toString() || randomUUID(); // sdkContext.requestId can be used
 
-    debugLog(1, `Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
+    debugLog(1, `Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}, sdkSessionId: ${sdkContext.sessionId}`);
 
     // Extract clientProjectRoot from tool arguments
     const effectiveClientProjectRoot = toolArgs.clientProjectRoot as string;
@@ -134,26 +92,44 @@ function createMcpServer(): Server {
       const toolResult = await toolExecutionService.executeTool(
         toolName,
         toolArgs,
-        adaptedToolHandlers,
+        toolHandlers, // Use original toolHandlers
         effectiveClientProjectRoot,
+        sdkContext, // Pass sdkContext
         undefined, // No progress handler for HTTP transport
-        debugLog,
+        // debugLog, // Removed, logger is now in context
       );
 
-      if (toolResult !== null) {
+      // Consistent response handling with stdio-server
+      if (toolResult?.error) {
+        // Tool reported an error
         return {
-          content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }],
-          isError: !!toolResult?.error,
-        };
-      } else {
-        return {
-          content: [{ type: 'text', text: 'Tool executed successfully' }],
+          // structuredContent should not be set or be undefined
+          content: [{ type: 'text', text: JSON.stringify(toolResult.error, null, 2) }], // Or toolResult.error.message if error is an object
+          isError: true,
         };
       }
+
+      if (toolResult === null) {
+        // Tool executed successfully but returned no specific data
+        return {
+          // structuredContent should not be set or be undefined
+          content: [{ type: 'text', text: 'Tool executed successfully with no specific result content.' }],
+          isError: false,
+        };
+      }
+
+      // Success case with structured content
+      return {
+        structuredContent: toolResult, // toolResult is the direct JSON object
+        content: toolResult.message && typeof toolResult.message === 'string' ? [{ type: 'text', text: toolResult.message }] : [],
+        isError: false,
+      };
     } catch (error) {
+      // This catch block handles errors thrown by pre-execution logic or if executeTool itself throws
       const errorMessage = error instanceof Error ? error.message : String(error);
       debugLog(1, `Tool execution error: ${errorMessage}`);
       return {
+        // structuredContent should not be set or be undefined
         content: [{ type: 'text', text: `Error: ${errorMessage}` }],
         isError: true,
       };
@@ -254,12 +230,16 @@ app.delete('/mcp', handleSessionRequest);
 
 // Legacy endpoints for backward compatibility
 app.get('/tools/list', async (req: Request, res: Response) => {
-  const tools = MEMORY_BANK_MCP_TOOLS.map((tool) => ({
+  debugLog(0, "Legacy endpoint /tools/list accessed. This endpoint is deprecated. Please use the standard MCP 'tools/list' method via POST /mcp.");
+
+  const tools = MEMORY_BANK_MCP_TOOLS.map((tool: McpTool) => ({ // Added McpTool type for safety
     name: tool.name,
     description: tool.description,
-    inputSchema: tool.parameters || { type: 'object', properties: {}, required: [] },
+    inputSchema: tool.inputSchema || { type: 'object', properties: {}, required: [] }, // Use inputSchema
+    // outputSchema and annotations are not exposed on this legacy endpoint
   }));
 
+  res.setHeader('X-Deprecated-Endpoint', '/tools/list is deprecated; use MCP tools/list method via POST /mcp');
   res.json({ tools });
 });
 

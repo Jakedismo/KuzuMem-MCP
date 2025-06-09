@@ -8,7 +8,7 @@ export const getGoverningItemsForComponentTool: McpTool = {
   name: 'get-governing-items-for-component',
   description:
     'Given a Component ID, use this tool to find all Decision items directly linked via DECISION_ON and all Rule items that share Context with the component (i.e., Context linked to Component via CONTEXT_OF and also to a Rule via CONTEXT_OF_RULE).',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -33,7 +33,7 @@ export const getGoverningItemsForComponentTool: McpTool = {
     idempotentHint: true,
     openWorldHint: false, // Assuming links are within the known graph
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       decisions: {

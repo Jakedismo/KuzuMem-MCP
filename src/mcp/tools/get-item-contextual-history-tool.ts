@@ -8,7 +8,7 @@ export const getItemContextualHistoryTool: McpTool = {
   name: 'get-item-contextual-history',
   description:
     'Given the ID of a Component, Decision, or Rule, use this tool to retrieve all associated Context items linked via CONTEXT_OF, CONTEXT_OF_DECISION, or CONTEXT_OF_RULE relationships. Results should ideally be sorted by the created_at timestamp of the Context items.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -39,7 +39,7 @@ export const getItemContextualHistoryTool: McpTool = {
     idempotentHint: true,
     openWorldHint: false, // Assuming context links are within the known graph
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       contextHistory: {

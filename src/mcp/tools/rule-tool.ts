@@ -7,7 +7,7 @@ import { McpTool } from '../types';
 export const addRuleTool: McpTool = {
   name: 'add-rule',
   description: "Add a rule to a repository's memory bank",
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -56,7 +56,7 @@ export const addRuleTool: McpTool = {
     idempotentHint: false,
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       success: {

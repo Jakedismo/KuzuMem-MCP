@@ -7,7 +7,7 @@ import { McpTool } from '../types';
 export const addDecisionTool: McpTool = {
   name: 'add-decision',
   description: "Add a decision record to a repository's memory bank",
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -44,7 +44,7 @@ export const addDecisionTool: McpTool = {
     idempotentHint: false,
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       success: {

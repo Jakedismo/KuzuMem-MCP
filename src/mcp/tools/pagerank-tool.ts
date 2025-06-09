@@ -8,7 +8,7 @@ export const pageRankTool: McpTool = {
   name: 'pagerank',
   description:
     'Use this tool to identify the most influential or central memory items by calculating their PageRank score. Requires defining a projected graph first.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -63,7 +63,7 @@ export const pageRankTool: McpTool = {
     idempotentHint: true, // PageRank is deterministic
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       pageRankScores: {

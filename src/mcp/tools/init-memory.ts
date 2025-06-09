@@ -9,7 +9,7 @@ export const initMemoryBankTool: McpTool = {
   name: 'init-memory-bank',
   description:
     'Initialize a new memory bank for a repository at a specified client project root. Only call this once per repository per client project root.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       clientProjectRoot: {
@@ -37,7 +37,7 @@ export const initMemoryBankTool: McpTool = {
     idempotentHint: true,
     openWorldHint: false, // Operates on a specified filesystem path
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       success: {

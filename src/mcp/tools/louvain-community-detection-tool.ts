@@ -8,7 +8,7 @@ export const louvainCommunityDetectionTool: McpTool = {
   name: 'louvain-community-detection',
   description:
     'Use this tool to discover naturally forming groups or themes (communities) within memory items based on their interconnections. Requires defining a projected graph first.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -53,7 +53,7 @@ export const louvainCommunityDetectionTool: McpTool = {
     idempotentHint: false, // Louvain can have slight variations in results depending on tie-breaking
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       communities: {

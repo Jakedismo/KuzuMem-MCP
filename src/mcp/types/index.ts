@@ -14,7 +14,7 @@ import { MemoryService } from '../../services/memory.service';
 export interface McpTool {
   name: string;
   description: string;
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: string;
     properties: Record<
       string,
@@ -30,7 +30,7 @@ export interface McpTool {
     >;
     required: string[];
   };
-  returns: {
+  outputSchema: { // Renamed from returns
     type: string;
     properties: Record<
       string,

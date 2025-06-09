@@ -40,8 +40,7 @@ import { EnrichedRequestHandlerExtra } from './types/sdk-custom';
 // Output 'Promise<any>' will be Promise<z.infer<typeof SpecificOutputSchema>>.
 export type SdkToolHandler = (
   params: any,
-  context: EnrichedRequestHandlerExtra, // CHANGED
-  memoryService: MemoryService, // Explicitly passing MemoryService for now
+  context: EnrichedRequestHandlerExtra,
 ) => Promise<any>;
 
 /**
@@ -56,10 +55,10 @@ export type SdkToolHandler = (
  */
 function ensureValidSessionContext(
   params: any,
-  context: EnrichedRequestHandlerExtra, // CHANGED
+  context: EnrichedRequestHandlerExtra,
   toolName: string,
 ): string {
-  const logger = context.logger || console;
+  const logger = context.logger || console; // context.logger should always exist now
   const clientProjectRoot = context.session.clientProjectRoot as string | undefined;
   const sessionRepository = context.session.repository as string | undefined;
   const sessionBranch = context.session.branch as string | undefined;
@@ -106,7 +105,8 @@ function ensureValidSessionContext(
 }
 
 export const toolHandlers: Record<string, SdkToolHandler> = {
-  'init-memory-bank': async (params, context, memoryService) => {
+  'init-memory-bank': async (params, context) => {
+    const { memoryService } = context; // Get memoryService from context
     console.error('[DEBUG-HANDLER] init-memory-bank ENTERED with params:', params);
     console.error('[DEBUG-HANDLER] context keys:', Object.keys(context));
     console.error('[DEBUG-HANDLER] memoryService available:', !!memoryService);
@@ -224,7 +224,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     return result; // This matches InitMemoryBankOutputSchema
   },
 
-  'get-metadata': async (params, context, memoryService) => {
+  'get-metadata': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = GetMetadataInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'get-metadata');
     context.logger.info(
@@ -249,7 +250,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     return metadataContent; // This matches GetMetadataOutputSchema (which is MetadataContentSchema)
   },
 
-  'update-metadata': async (params, context, memoryService) => {
+  'update-metadata': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = UpdateMetadataInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -283,7 +285,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     return result;
   },
 
-  'add-component': async (params, context, memoryService) => {
+  'add-component': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = AddComponentInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'add-component');
     context.logger.info(
@@ -312,7 +315,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     };
   },
 
-  'get-context': async (params, context, memoryService) => {
+  'get-context': async (params, context) => {
+    const { memoryService } = context;
     try {
       context.logger.info('[get-context handler] Handler started', { params });
       const validatedParams = GetContextInputSchema.parse(params);
@@ -348,7 +352,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'update-context': async (params, context, memoryService) => {
+  'update-context': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = UpdateContextInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'update-context');
     context.logger.info(
@@ -375,7 +380,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     return result; // Matches UpdateContextOutputSchema {success, message?, context?}
   },
 
-  'add-decision': async (params, context, memoryService) => {
+  'add-decision': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = AddDecisionInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'add-decision');
     context.logger.info(
@@ -403,7 +409,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     };
   },
 
-  'add-rule': async (params, context, memoryService) => {
+  'add-rule': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = AddRuleInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'add-rule');
     context.logger.info(
@@ -435,7 +442,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
   },
 
   // New streaming tool handler implementation
-  'get-component-dependencies': async (params, context, memoryService) => {
+  'get-component-dependencies': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = GetComponentDependenciesInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -561,7 +569,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'get-component-dependents': async (params, context, memoryService) => {
+  'get-component-dependents': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = GetComponentDependentsInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -639,7 +648,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'get-item-contextual-history': async (params, context, memoryService) => {
+  'get-item-contextual-history': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = GetItemContextualHistoryInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -720,7 +730,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'get-governing-items-for-component': async (params, context, memoryService) => {
+  'get-governing-items-for-component': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = GetGoverningItemsForComponentInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -805,7 +816,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'get-related-items': async (params, context, memoryService) => {
+  'get-related-items': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = GetRelatedItemsInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -894,7 +906,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'k-core-decomposition': async (params, context, memoryService) => {
+  'k-core-decomposition': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = KCoreDecompositionInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -977,7 +990,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'louvain-community-detection': async (params, context, memoryService) => {
+  'louvain-community-detection': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = LouvainCommunityDetectionInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1059,7 +1073,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  pagerank: async (params, context, memoryService) => {
+  pagerank: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = PageRankInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'pagerank');
 
@@ -1138,7 +1153,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'strongly-connected-components': async (params, context, memoryService) => {
+  'strongly-connected-components': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = StronglyConnectedComponentsInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1219,7 +1235,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'weakly-connected-components': async (params, context, memoryService) => {
+  'weakly-connected-components': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = WeaklyConnectedComponentsInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1302,7 +1319,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  'shortest-path': async (params, context, memoryService) => {
+  'shortest-path': async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = ShortestPathInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'shortest-path');
 
@@ -1389,7 +1407,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  count_nodes_by_label: async (params, context, memoryService) => {
+  count_nodes_by_label: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = CountNodesByLabelInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1423,7 +1442,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  list_nodes_by_label: async (params, context, memoryService) => {
+  list_nodes_by_label: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = ListNodesByLabelInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1459,7 +1479,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  get_node_properties: async (params, context, memoryService) => {
+  get_node_properties: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = GetNodePropertiesInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1488,7 +1509,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  list_all_indexes: async (params, context, memoryService) => {
+  list_all_indexes: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = ListAllIndexesInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1517,7 +1539,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  add_file: async (params, context, memoryService) => {
+  add_file: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = AddFileInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'add_file');
     context.logger.info(
@@ -1545,7 +1568,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  associate_file_with_component: async (params, context, memoryService) => {
+  associate_file_with_component: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = AssociateFileWithComponentInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1578,7 +1602,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  add_tag: async (params, context, memoryService) => {
+  add_tag: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = AddTagInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'add_tag');
     context.logger.info(
@@ -1606,7 +1631,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  tag_item: async (params, context, memoryService) => {
+  tag_item: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = TagItemInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(validatedParams, context, 'tag_item');
     context.logger.info(
@@ -1639,7 +1665,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  find_items_by_tag: async (params, context, memoryService) => {
+  find_items_by_tag: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = FindItemsByTagInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,
@@ -1669,7 +1696,8 @@ export const toolHandlers: Record<string, SdkToolHandler> = {
     }
   },
 
-  list_all_labels: async (params, context, memoryService) => {
+  list_all_labels: async (params, context) => {
+    const { memoryService } = context;
     const validatedParams = ListAllLabelsInputSchema.parse(params);
     const clientProjectRoot = ensureValidSessionContext(
       validatedParams,

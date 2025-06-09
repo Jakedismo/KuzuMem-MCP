@@ -8,7 +8,7 @@ export const shortestPathTool: McpTool = {
   name: 'shortest-path',
   description:
     'Use this tool to understand the most direct relationship or sequence of connections between any two memory items. Requires defining a projected graph first, and specifying start and end node IDs.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -67,7 +67,7 @@ export const shortestPathTool: McpTool = {
     idempotentHint: true, // Shortest path algorithms are generally deterministic for unweighted or with deterministic tie-breaking
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       path: {

@@ -8,7 +8,7 @@ export const getComponentDependenciesTool: McpTool = {
   name: 'get-component-dependencies',
   description:
     'Given a Component ID, use this tool to find all other Component items that the specified component directly or indirectly relies on (its upstream dependencies) by traversing DEPENDS_ON relationships.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -33,7 +33,7 @@ export const getComponentDependenciesTool: McpTool = {
     idempotentHint: true,
     openWorldHint: false, // Assuming dependencies are within the known graph
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       dependencies: {

@@ -8,7 +8,7 @@ export const stronglyConnectedComponentsTool: McpTool = {
   name: 'strongly-connected-components',
   description:
     'Use this tool to find sets of memory items (especially Components with DEPENDS_ON relationships) that are cyclically dependent or form tight feedback loops where every item in the set is reachable from every other item by following directed links. Requires defining a projected graph first.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -52,7 +52,7 @@ export const stronglyConnectedComponentsTool: McpTool = {
     idempotentHint: true, // SCC algorithms are deterministic
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       stronglyConnectedComponents: {

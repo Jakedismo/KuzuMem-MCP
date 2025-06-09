@@ -8,7 +8,7 @@ export const getRelatedItemsTool: McpTool = {
   name: 'get-related-items',
   description:
     'Given a starting memory item ID (e.g., Component, Decision, Rule, or Context), use this tool to traverse outgoing relationships up to a specified depth (e.g., 1 or 2 hops) and return all connected memory items. Can optionally filter by relationship or target node type.',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -47,7 +47,7 @@ export const getRelatedItemsTool: McpTool = {
     idempotentHint: true,
     openWorldHint: true, // The graph structure can be arbitrary
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       relatedItems: {

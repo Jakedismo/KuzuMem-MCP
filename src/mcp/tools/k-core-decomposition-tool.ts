@@ -8,7 +8,7 @@ export const kCoreDecompositionTool: McpTool = {
   name: 'k-core-decomposition',
   description:
     "Use this tool to identify clusters of highly interconnected memory items (k-cores). This helps in understanding core project areas by finding subgraphs where every item has at least 'k' connections within the cluster. Requires defining a projected graph first.",
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -58,7 +58,7 @@ export const kCoreDecompositionTool: McpTool = {
     idempotentHint: true, // Given the same graph and k, result is the same
     openWorldHint: false, // Operates on the defined projected graph
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       kCoreNodes: {

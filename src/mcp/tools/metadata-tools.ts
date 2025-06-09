@@ -7,7 +7,7 @@ import { McpTool } from '../types';
 export const getMetadataTool: McpTool = {
   name: 'get-metadata',
   description: 'Get metadata for a repository',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -28,7 +28,7 @@ export const getMetadataTool: McpTool = {
     idempotentHint: true,
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       metadata: {
@@ -46,7 +46,7 @@ export const getMetadataTool: McpTool = {
 export const updateMetadataTool: McpTool = {
   name: 'update-metadata',
   description: 'Update metadata for a repository',
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -71,7 +71,7 @@ export const updateMetadataTool: McpTool = {
     idempotentHint: true,
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       success: {

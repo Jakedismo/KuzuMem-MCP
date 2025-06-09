@@ -8,7 +8,7 @@ export const weaklyConnectedComponentsTool: McpTool = {
   name: 'weakly-connected-components',
   description:
     "Use this tool to identify isolated 'islands' or distinct topics within the memory bank by finding groups of interconnected items that have no links to other groups (ignoring link direction). Requires defining a projected graph first.",
-  parameters: {
+  inputSchema: { // Renamed from parameters
     type: 'object',
     properties: {
       repository: {
@@ -52,7 +52,7 @@ export const weaklyConnectedComponentsTool: McpTool = {
     idempotentHint: true, // WCC algorithms are deterministic
     openWorldHint: false,
   },
-  returns: {
+  outputSchema: { // Renamed from returns
     type: 'object',
     properties: {
       weaklyConnectedComponents: {

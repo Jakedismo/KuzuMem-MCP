@@ -1,6 +1,13 @@
+import {
+  RequestHandlerExtra,
+  ServerNotification,
+  ServerRequest,
+} from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { ToolHandler } from '../types';
 import { MemoryService } from '../../services/memory.service';
-import { ProgressHandler } from '../streaming/progress-handler';
+// import { ProgressHandler } from '../streaming/progress-handler'; // Removed
+import { createAugmentedContext } from '../utils/context-utils.js';
+import { EnrichedRequestHandlerExtra } from '../types/sdk-custom.js';
 
 /**
  * Singleton service for executing tools with progress support
@@ -38,53 +45,42 @@ export class ToolExecutionService {
     toolName: string,
     toolArgs: any,
     toolHandlers: Record<string, ToolHandler>,
-    clientProjectRoot: string,
-    progressHandler?: ProgressHandler,
-    debugLog?: (level: number, message: string, data?: any) => void,
+    clientProjectRoot: string, // Will be part of EnrichedRequestHandlerExtra.session
+    sdkContext: RequestHandlerExtra<ServerRequest, ServerNotification>,
+    // progressHandler is removed
+    // debugLog is removed, use logger from augmentedContext
   ): Promise<any> {
-    // The clientProjectRoot is passed directly to tool handlers and then to MemoryService methods.
-    // Setting it as a process.env variable is problematic for concurrent requests and unnecessary.
-    // if (clientProjectRoot) {
-    //   process.env.CLIENT_PROJECT_ROOT = clientProjectRoot;
-    // }
     const memoryService = await this.ensureMemoryService();
+
+    // Create the augmented context
+    const augmentedContext = createAugmentedContext(
+      sdkContext,
+      toolArgs,
+      memoryService,
+      clientProjectRoot
+      // progressHandler is no longer passed
+    );
 
     try {
       const handler = toolHandlers[toolName];
       if (!handler) {
         const errorMsg = `Tool execution handler not implemented for '${toolName}'.`;
-        if (progressHandler) {
-          // For unhandled tool, send error via both progress and final response
-          const errorPayload = { error: errorMsg };
-          progressHandler.progress({ ...errorPayload, status: 'error', isFinal: true });
-          progressHandler.sendFinalResponse(errorPayload, true);
-          return null;
-        }
-        return { error: errorMsg }; // Batch error response
+        // The call to augmentedContext.sendProgress is removed from here.
+        // The server will send a final error response based on this return.
+        augmentedContext.logger.warn(`Tool handler not found: ${toolName}`); // Log it internally
+        return { error: errorMsg };
       }
 
-      // Execute the tool handler with progress support
-      // The handler is now responsible for calling sendFinalProgress and sendFinalResponse
-      // and returning null if it used the progressHandler.
-      return await handler(toolArgs, memoryService, progressHandler, clientProjectRoot);
+      // Execute the tool handler with the new augmented context.
+      // Tool handlers are now expected to have the signature:
+      // `async (params: SomeParams, context: EnrichedRequestHandlerExtra)`
+      return await handler(toolArgs, augmentedContext);
     } catch (err: any) {
       const errorMsg = `Error executing tool '${toolName}': ${err.message || String(err)}`;
-      if (debugLog) {
-        debugLog(0, errorMsg, err.stack);
-      } else {
-        console.error(errorMsg, err.stack);
-      }
+      augmentedContext.logger.error(errorMsg, err.stack);
 
-      if (progressHandler) {
-        // If an error is thrown from the handler (or OperationClass it calls),
-        // and a progressHandler exists, use it to send final error messages.
-        const errorPayload = { error: errorMsg }; // This is for the batch response part
-        const progressErrorData = { error: errorMsg, status: 'error' }; // Data for the progress notification
-        progressHandler.progress({ ...progressErrorData, isFinal: true });
-        progressHandler.sendFinalResponse(errorPayload, true);
-        return null; // Signal that error was handled via progress mechanism
-      }
-      // If no progressHandler, return error as a batch response
+      // The call to augmentedContext.sendProgress is removed from here.
+      // The server will send a final error response based on this return.
       return { error: errorMsg };
     }
   }
