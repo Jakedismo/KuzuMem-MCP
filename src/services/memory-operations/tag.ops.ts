@@ -1,195 +1,212 @@
+import { KuzuDBClient } from '@mcp/ai-assistant-lib/kuzu';
+import { EnrichedRequestHandlerExtra } from '@mcp/ai-assistant-lib/mcp';
+import * as toolSchemas from '@mcp/ai-assistant-lib/tool-schemas';
 import { z } from 'zod';
-import {
-  RepositoryRepository,
-  TagRepository /*, other needed Item Repositories for tagItemOp */,
-} from '../../repositories';
-import {
-  TagNodeSchema,
-  AddTagInputSchema,
-  AddTagOutputSchema,
-  TagItemInputSchema,
-  TagItemOutputSchema,
-  FindItemsByTagInputSchema,
-  FindItemsByTagOutputSchema,
-  RelatedItemBaseSchema,
-} from '../../mcp/schemas/tool-schemas';
-import {
-  Tag /* Component, Decision, Rule, File, Context - if used for casting */,
-} from '../../types'; // Internal Tag type
 
-// Simple context type to avoid SDK import issues
-type McpContext = {
-  logger?: any;
-};
-
-/**
- * Operation to add or update a tag node.
- */
 export async function addTagOp(
-  mcpContext: McpContext,
-  repositoryName: string, // Used for logging/context, even if tags are global
-  branch: string, // Used for logging/context
-  tagDataFromTool: z.infer<typeof AddTagInputSchema>,
-  repositoryRepo: RepositoryRepository, // Potentially for validating repo context if tags were scoped
-  tagRepo: TagRepository,
-): Promise<z.infer<typeof AddTagOutputSchema>> {
-  const logger = mcpContext.logger || console;
-  logger.info(
-    `[tag.ops] addTagOp called for tag ID: ${tagDataFromTool.id}, Name: ${tagDataFromTool.name}`,
-  );
+  mcpContext: EnrichedRequestHandlerExtra,
+  kuzuClient: KuzuDBClient,
+  tagData: {
+    id: string;
+    name: string;
+    color?: string | null;
+    description?: string | null;
+  }
+): Promise<z.infer<typeof toolSchemas.TagNodeSchema> | null> {
+  mcpContext.logger.info(`Attempting to add/update Tag: id=${tagData.id}, name=${tagData.name}`);
+
+  const properties = {
+    id: tagData.id,
+    name: tagData.name,
+    color: tagData.color || null,
+    description: tagData.description || null,
+    created_at: new Date().toISOString(), // Used only for ON CREATE
+  };
+
+  const cypherQuery = `
+    MERGE (t:Tag {id: $id})
+    ON CREATE SET
+        t.name = $name,
+        t.color = $color,
+        t.description = $description,
+        t.created_at = $created_at
+    ON MATCH SET
+        t.name = $name,
+        t.color = $color,
+        t.description = $description
+    RETURN t.id as id, t.name as name, t.color as color, t.description as description, t.created_at as created_at
+  `;
 
   try {
-    // Assuming TagRepository.upsertTagNode expects data aligned with internal Tag type,
-    // (omitting created_at as DB might handle it, or pass it if repo expects it)
-    const tagToUpsert: Omit<Tag, 'created_at'> = {
-      id: tagDataFromTool.id,
-      name: tagDataFromTool.name,
-      color: tagDataFromTool.color,
-      description: tagDataFromTool.description,
-      repository: 'global', // Tags are global, not repo-scoped based on Tag interface
-      branch: 'main', // Default branch for global tags
-    };
+    const queryResult = await kuzuClient.runWriteQuery(cypherQuery, properties);
+    mcpContext.logger.debug({ queryResult, params: properties }, 'Kuzu query executed for addTagOp.');
 
-    const upsertedTagNode = await tagRepo.upsertTagNode(tagToUpsert);
+    if (queryResult && queryResult.length > 0) {
+      const dbRecord = queryResult[0] as any;
 
-    if (!upsertedTagNode) {
-      logger.error(
-        `[tag.ops] TagRepository.upsertTagNode returned null for tag ID ${tagDataFromTool.id}`,
+      const createdAt = dbRecord.created_at instanceof Date
+                        ? dbRecord.created_at.toISOString()
+                        : String(dbRecord.created_at);
+
+      // Ensure the returned object matches the TagNodeSchema structure
+      const tagNode: z.infer<typeof toolSchemas.TagNodeSchema> = {
+        id: dbRecord.id,
+        name: dbRecord.name,
+        color: dbRecord.color, // Will be null if not set, which is fine by schema (optional)
+        description: dbRecord.description, // Will be null if not set
+        created_at: createdAt,
+        // repository and branch are not part of the Tag node itself, as tags are global.
+        // The toolSchemas.TagNodeSchema might include these if it's a generic node schema.
+        // For the purpose of this op, we return what's stored on the Tag node.
+        // If TagNodeSchema mandatorily requires repo/branch, this would need adjustment or schema review.
+        // Based on the prompt, tags are global, so repo/branch are not intrinsic properties of the tag itself.
+      };
+      mcpContext.logger.info({ tagNode }, `Tag ${tagData.name} (id: ${tagData.id}) added/updated successfully.`);
+      return tagNode;
+    } else {
+      mcpContext.logger.error(
+        { queryParamsSent: properties, result: queryResult },
+        'Kuzu query for addTagOp executed but returned no result or an empty result set. This is unexpected for MERGE...RETURN.'
       );
-      return { success: false, message: 'Failed to create/update tag node in repository.' };
+      throw new Error(`Failed to create or update tag ${tagData.name}: No data returned from database.`);
     }
-
-    // Transform internal Tag node to Zod TagNodeSchema for the output
-    const zodTagNode: z.infer<typeof TagNodeSchema> = {
-      ...upsertedTagNode,
-      id: upsertedTagNode.id,
-      name: upsertedTagNode.name,
-      color: upsertedTagNode.color || null,
-      description: upsertedTagNode.description || null,
-      created_at: upsertedTagNode.created_at
-        ? upsertedTagNode.created_at instanceof Date
-          ? upsertedTagNode.created_at.toISOString()
-          : String(upsertedTagNode.created_at)
-        : null,
-    };
-
-    logger.info(
-      `[tag.ops] Tag node ${upsertedTagNode.id} (${upsertedTagNode.name}) upserted successfully.`,
-    );
-    return { success: true, message: 'Tag added/updated successfully.', tag: zodTagNode };
-  } catch (error: any) {
-    logger.error(`[tag.ops] Error in addTagOp for tag ID ${tagDataFromTool.id}: ${error.message}`, {
-      error: error.toString(),
-      stack: error.stack,
-    });
-    return {
-      success: false,
-      message: error.message || 'An unexpected error occurred while adding the tag.',
-    };
+  } catch (error) {
+    mcpContext.logger.error({ error, query: cypherQuery, params: properties }, 'Error executing addTagOp Cypher query');
+    throw error;
   }
 }
 
-/**
- * Operation to apply a tag to an item.
- */
 export async function tagItemOp(
-  mcpContext: McpContext,
-  repositoryName: string,
-  branch: string,
+  mcpContext: EnrichedRequestHandlerExtra,
+  kuzuClient: KuzuDBClient,
+  repositoryId: string, // <repoName>:<branchName>
+  branchName: string,   // Explicit branch name
   itemId: string,
-  itemType: z.infer<typeof TagItemInputSchema>['itemType'], // From Zod schema
-  tagId: string,
-  repositoryRepo: RepositoryRepository,
-  tagRepo: TagRepository,
-  // May need other item-specific repositories if TagRepository.addItemTag is not generic enough
-): Promise<z.infer<typeof TagItemOutputSchema>> {
-  const logger = mcpContext.logger || console;
-  const repoId = `${repositoryName}:${branch}`;
-  logger.info(`[tag.ops] tagItemOp: Item ${itemType}:${itemId} with Tag:${tagId} in ${repoId}`);
+  itemType: 'Component' | 'Decision' | 'Rule' | 'File' | 'Context',
+  tagId: string
+): Promise<boolean> {
+  mcpContext.logger.info(
+    `Attempting to tag Item {type: ${itemType}, id: ${itemId}} with Tag {id: ${tagId}} in repository: ${repositoryId}, branch: ${branchName}`
+  );
+
+  let itemLabel = '';
+  switch (itemType) {
+    case 'Component': itemLabel = 'Component'; break;
+    case 'Decision': itemLabel = 'Decision'; break;
+    case 'Rule': itemLabel = 'Rule'; break;
+    case 'File': itemLabel = 'File'; break;
+    case 'Context': itemLabel = 'Context'; break;
+    default:
+      const exhaustiveCheck: never = itemType; // Ensures all cases are handled if itemType is a strict union
+      mcpContext.logger.error(`[tagItemOp] Unsupported itemType: ${exhaustiveCheck}`);
+      throw new Error(`Unsupported itemType for tagging: ${exhaustiveCheck}`);
+  }
+
+  // Assuming Decision, Rule, Context nodes also have repository and branch properties.
+  // If not, the MATCH for 'item' would need adjustment for those types.
+  // For now, proceeding with the assumption they are scoped like Component and File.
+  const cypherQuery = `
+    MATCH (item:${itemLabel} {id: $itemId, repository: $repositoryId, branch: $branchName}),
+          (tag:Tag {id: $tagId})
+    MERGE (item)-[r:IS_TAGGED_WITH]->(tag)
+    RETURN r
+  `;
+
+  const queryParams = {
+    itemId,
+    tagId,
+    repositoryId,
+    branchName,
+  };
 
   try {
-    const repoNode = await repositoryRepo.findByName(repositoryName, branch);
-    if (!repoNode || !repoNode.id) {
-      logger.warn(`[tag.ops] Repository ${repoId} not found for tagItemOp.`);
-      return { success: false, message: `Repository ${repoId} not found.` };
-    }
+    const queryResult = await kuzuClient.runWriteQuery(cypherQuery, queryParams);
+    mcpContext.logger.debug({ queryResult, params: queryParams }, 'Kuzu query executed for tagItemOp.');
 
-    // Construct the specific relationship type, e.g., TAGGED_COMPONENT, TAGGED_FILE
-    // This should align with DDL and TagRepository.addItemTag expectations
-    const relationshipType = `TAGGED_${itemType.toUpperCase()}`;
-
-    const success = await tagRepo.addItemTag(
-      repoNode.id,
-      branch,
-      itemId,
-      itemType,
-      tagId,
-      relationshipType,
-    );
-
-    if (!success) {
-      logger.warn(
-        `[tag.ops] tagRepo.addItemTag failed for Item ${itemType}:${itemId}, Tag:${tagId}`,
+    if (queryResult && queryResult.length > 0) {
+      mcpContext.logger.info(
+        `Successfully tagged Item {type: ${itemType}, id: ${itemId}} with Tag {id: ${tagId}}. Relationship: ${JSON.stringify(queryResult[0])}`
       );
-      return { success: false, message: 'Failed to apply tag to item in repository.' };
+      return true;
+    } else {
+      // This case means MATCH failed (item or tag not found) or MERGE didn't return 'r'.
+      // Kuzu's MERGE on relationships, if the MATCH part for nodes fails, does nothing and returns an empty result.
+      mcpContext.logger.warn(
+        `Failed to tag Item {type: ${itemType}, id: ${itemId}} with Tag {id: ${tagId}}. Item or Tag not found, or relationship already existed and MERGE did not return it (check query).`,
+        { queryParams }
+      );
+      return false; // Indicates nodes not found or relationship not actively formed by this call
     }
-
-    logger.info(`[tag.ops] Item ${itemType}:${itemId} successfully tagged with ${tagId}.`);
-    return { success: true, message: 'Item tagged successfully.' };
-  } catch (error: any) {
-    logger.error(
-      `[tag.ops] Error in tagItemOp for Item ${itemType}:${itemId}, Tag:${tagId}: ${error.message}`,
-      { error: error.toString(), stack: error.stack },
+  } catch (error) {
+    mcpContext.logger.error(
+      { error, query: cypherQuery, params: queryParams },
+      'Error executing tagItemOp Cypher query'
     );
-    return {
-      success: false,
-      message: error.message || 'An unexpected error occurred while tagging the item.',
-    };
+    throw error; // Rethrow to be handled by the service layer
   }
 }
 
-/**
- * Operation to find items associated with a specific tag.
- */
 export async function findItemsByTagOp(
-  mcpContext: McpContext,
-  repositoryName: string,
-  branch: string,
+  mcpContext: EnrichedRequestHandlerExtra,
+  kuzuClient: KuzuDBClient,
+  repositoryId: string, // <repoName>:<branchName>
+  branchName: string,
   tagId: string,
-  itemTypeFilter: z.infer<typeof FindItemsByTagInputSchema>['itemTypeFilter'],
-  repositoryRepo: RepositoryRepository,
-  tagRepo: TagRepository,
-): Promise<z.infer<typeof FindItemsByTagOutputSchema>> {
-  const logger = mcpContext.logger || console;
-  const repoId = `${repositoryName}:${branch}`;
-  logger.info(
-    `[tag.ops] findItemsByTagOp for Tag:${tagId} in ${repoId}, Filter: ${itemTypeFilter}`,
+  itemTypeFilter: string // 'All' or a specific node label like 'Component', 'File', etc.
+): Promise<Array<Record<string, any>>> {
+  mcpContext.logger.info(
+    `Attempting to find items tagged with Tag {id: ${tagId}} in repository: ${repositoryId}, branch: ${branchName}, filter: ${itemTypeFilter}`
   );
 
+  let cypherQuery = `
+    MATCH (tag:Tag {id: $tagId})<-[:IS_TAGGED_WITH]-(item)
+    WHERE item.repository = $repositoryId AND item.branch = $branchName
+  `;
+
+  const queryParams: Record<string, any> = {
+    tagId,
+    repositoryId,
+    branchName
+  };
+
+  if (itemTypeFilter && itemTypeFilter.toLowerCase() !== 'all') {
+    // Ensure itemTypeFilter is a valid label and not arbitrary user input to prevent injection if Kuzu has issues.
+    // For now, assuming itemTypeFilter will be one of the known labels.
+    cypherQuery += ` AND $itemTypeFilter IN labels(item)`;
+    queryParams.itemTypeFilter = itemTypeFilter;
+  }
+
+  // item{.*} is Kuzu's syntax to get all properties of the node 'item' as a map/object.
+  // labels(item)[0] gets the primary label of the node.
+  cypherQuery += ` RETURN item.id AS id, labels(item)[0] AS nodeLabel, item{.*} AS properties`;
+
   try {
-    const repoNode = await repositoryRepo.findByName(repositoryName, branch);
-    if (!repoNode || !repoNode.id) {
-      logger.warn(`[tag.ops] Repository ${repoId} not found for findItemsByTagOp.`);
-      return { tagId, items: [] }; // Return empty items as per schema if repo not found
+    const queryResult = await kuzuClient.runReadOnlyQuery(cypherQuery, queryParams);
+    mcpContext.logger.debug({ resultsCount: queryResult?.length, params: queryParams }, 'Kuzu query executed for findItemsByTagOp.');
+
+    if (!queryResult) {
+        mcpContext.logger.warn('Kuzu query for findItemsByTagOp returned null or undefined, returning empty array.');
+        return [];
     }
 
-    // tagRepo.findItemsByTag is expected to return internal item representations
-    const itemsInternal = await tagRepo.findItemsByTag(repoNode.id, branch, tagId, itemTypeFilter);
-
-    // Transform internal items to Zod RelatedItemBaseSchema (or a more specific union type if defined)
-    const zodItems: z.infer<typeof RelatedItemBaseSchema>[] = itemsInternal.map((item: any) => ({
-      id: item.id?.toString(),
-      type: item.type || (Array.isArray(item.labels) ? item.labels[0] : 'Unknown'), // Assuming type/label info is available
-      ...(item.properties || item), // Spread other properties
-    }));
-
-    logger.info(`[tag.ops] Found ${zodItems.length} items for Tag:${tagId} in ${repoId}`);
-    return { tagId, items: zodItems };
-  } catch (error: any) {
-    logger.error(`[tag.ops] Error in findItemsByTagOp for Tag:${tagId}: ${error.message}`, {
-      error: error.toString(),
-      stack: error.stack,
+    const items = queryResult.map((record: any) => {
+      // The 'properties' field will contain all properties of the 'item' node.
+      // We also explicitly get 'id' and 'nodeLabel' for convenience and consistency.
+      return {
+        id: record.id, // Explicitly selected id
+        type: record.nodeLabel, // Explicitly selected label
+        ...(record.properties || {}), // Spread all other properties from the item node
+      };
     });
-    return { tagId, items: [] }; // Return empty items on error as per schema
+
+    mcpContext.logger.info(`Found ${items.length} items for Tag {id: ${tagId}} with filter '${itemTypeFilter}'.`);
+    return items;
+
+  } catch (error) {
+    mcpContext.logger.error(
+      { error, query: cypherQuery, params: queryParams },
+      'Error executing findItemsByTagOp Cypher query'
+    );
+    throw error; // Rethrow to be handled by the service layer
   }
 }

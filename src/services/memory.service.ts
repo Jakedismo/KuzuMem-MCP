@@ -19,9 +19,11 @@ import { Mutex } from '../utils/mutex';
 import * as componentOps from './memory-operations/component.ops';
 import * as contextOps from './memory-operations/context.ops';
 import * as decisionOps from './memory-operations/decision.ops';
+import * as fileOps from './memory-operations/file.ops';
 import * as graphOps from './memory-operations/graph.ops';
 import * as metadataOps from './memory-operations/metadata.ops';
 import * as ruleOps from './memory-operations/rule.ops';
+import * as tagOps from './memory-operations/tag.ops';
 
 /**
  * Service for memory bank operations
@@ -1707,24 +1709,40 @@ export class MemoryService {
   ): Promise<z.infer<typeof toolSchemas.AddFileOutputSchema>> {
     const logger = mcpContext.logger || console;
     logger.info(`[MemoryService.addFile] For path ${fileData.path} in ${repositoryName}:${branch}`);
-    await this.getKuzuClient(mcpContext, clientProjectRoot);
-    const repoId = `${repositoryName}:${branch}`;
-    const fileNode = {
-      id: fileData.id,
-      name: fileData.name,
-      path: fileData.path,
-      language: fileData.language || null,
-      metrics: fileData.metrics || null,
-      content_hash: fileData.content_hash || null,
-      mime_type: fileData.mime_type || null,
-      size_bytes: fileData.size_bytes === null ? null : Number(fileData.size_bytes),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      repository: repoId,
-      branch,
-    };
-    logger.warn('TODO: Implement addFile with kuzuClient.runWriteQuery and FileRepository');
-    return { success: true, message: 'File added (stub)', file: fileNode as any };
+
+    try {
+      const kuzuClient = await this.getKuzuClient(mcpContext, clientProjectRoot);
+      const repositoryId = `${repositoryName}:${branch}`; // As per plan
+
+      // Call the actual operation function
+      const createdFileNode = await fileOps.addFileOp(
+        mcpContext,
+        kuzuClient,
+        repositoryId,
+        branch, // Pass branch name explicitly as per addFileOp signature
+        fileData,
+      );
+
+      if (createdFileNode) {
+        logger.info(`[MemoryService.addFile] File ${createdFileNode.path} added/updated successfully in ${repositoryId}.`);
+        return {
+          success: true,
+          message: 'File added/updated successfully.',
+          file: createdFileNode,
+        };
+      } else {
+        // This case might occur if addFileOp returns null without throwing an error
+        logger.error(`[MemoryService.addFile] addFileOp returned null for ${fileData.path} in ${repositoryId}.`);
+        throw new Error('Failed to add/update file: operation returned no data.');
+      }
+    } catch (error: any) {
+      logger.error(
+        `[MemoryService.addFile] Error processing file ${fileData.path} in ${repositoryName}:${branch}: ${error.message}`,
+        { error: error.toString(), stack: error.stack },
+      );
+      // Rethrow the error to be handled by the tool handler, as per plan
+      throw error;
+    }
   }
 
   async associateFileWithComponent(
@@ -1737,11 +1755,46 @@ export class MemoryService {
   ): Promise<z.infer<typeof toolSchemas.AssociateFileWithComponentOutputSchema>> {
     const logger = mcpContext.logger || console;
     logger.info(
-      `[MemoryService.associateFileWithComponent] C:${componentId} F:${fileId} in ${repositoryName}:${branch}`,
+      `[MemoryService.associateFileWithComponent] Attempting for C:${componentId}, F:${fileId} in ${repositoryName}:${branch}`
     );
-    await this.getKuzuClient(mcpContext, clientProjectRoot);
-    logger.warn('TODO: Implement associateFileWithComponent with kuzuClient.runWriteQuery');
-    return { success: true, message: 'File associated (stub)' };
+
+    try {
+      const kuzuClient = await this.getKuzuClient(mcpContext, clientProjectRoot);
+      const repositoryId = `${repositoryName}:${branch}`;
+
+      const associationResult = await fileOps.associateFileWithComponentOp(
+        mcpContext,
+        kuzuClient,
+        repositoryId,
+        branch, // Pass branch name explicitly
+        componentId,
+        fileId
+      );
+
+      if (associationResult) {
+        logger.info(
+          `[MemoryService.associateFileWithComponent] Successfully associated C:${componentId} with F:${fileId} in ${repositoryId}.`
+        );
+        return { success: true, message: 'File associated successfully with component.' };
+      } else {
+        logger.warn(
+          `[MemoryService.associateFileWithComponent] Failed to associate C:${componentId} with F:${fileId} in ${repositoryId}. Op returned false, possibly due to non-existent nodes.`
+        );
+        return {
+          success: false,
+          message: 'Failed to associate file with component. Ensure Component and File exist and match repository/branch.'
+        };
+      }
+    } catch (error: any) {
+      logger.error(
+        `[MemoryService.associateFileWithComponent] Error for C:${componentId}, F:${fileId} in ${repositoryName}:${branch}: ${error.message}`,
+        { error: error.toString(), stack: error.stack }
+      );
+      return {
+        success: false,
+        message: error.message || 'An unexpected error occurred during file-component association.'
+      };
+    }
   }
 
   async addTag(
@@ -1752,17 +1805,50 @@ export class MemoryService {
     tagData: z.infer<typeof toolSchemas.AddTagInputSchema>,
   ): Promise<z.infer<typeof toolSchemas.AddTagOutputSchema>> {
     const logger = mcpContext.logger || console;
-    logger.info(`[MemoryService.addTag] For tag ${tagData.name} in ${repositoryName}:${branch}`);
-    await this.getKuzuClient(mcpContext, clientProjectRoot);
-    const placeholderTag = {
-      id: tagData.id,
-      name: tagData.name,
-      color: tagData.color || null,
-      description: tagData.description || null,
-      created_at: new Date().toISOString(),
-    };
-    logger.warn('TODO: Implement addTag with kuzuClient.runWriteQuery and TagRepository');
-    return { success: true, message: 'Tag added/updated (stub)', tag: placeholderTag as any };
+    // Log includes repository and branch for context, even though tags are global
+    logger.info(`[MemoryService.addTag] Attempting for tag '${tagData.name}' (id: ${tagData.id}) in context of ${repositoryName}:${branch}`);
+
+    try {
+      const kuzuClient = await this.getKuzuClient(mcpContext, clientProjectRoot);
+
+      // Prepare data for the tagOps.addTagOp function
+      // It does not need repositoryName or branch as tags are global
+      const tagInputForOp = {
+        id: tagData.id,
+        name: tagData.name,
+        color: tagData.color, // Pass through, op will handle null/undefined
+        description: tagData.description, // Pass through, op will handle null/undefined
+      };
+
+      const createdTagNode = await tagOps.addTagOp(mcpContext, kuzuClient, tagInputForOp);
+
+      if (createdTagNode) {
+        logger.info(`[MemoryService.addTag] Tag '${createdTagNode.name}' (id: ${createdTagNode.id}) processed successfully.`);
+        return {
+          success: true,
+          message: 'Tag added/updated successfully.',
+          tag: createdTagNode,
+        };
+      } else {
+        // This case should ideally be covered by addTagOp throwing an error if it returns null unexpectedly
+        logger.error(`[MemoryService.addTag] addTagOp returned null for tag '${tagData.name}' (id: ${tagData.id}). This indicates an issue in the op.`);
+        return {
+          success: false,
+          message: `Failed to add/update tag '${tagData.name}': operation returned no data.`,
+          tag: undefined,
+        };
+      }
+    } catch (error: any) {
+      logger.error(
+        `[MemoryService.addTag] Error processing tag '${tagData.name}' (id: ${tagData.id}): ${error.message}`,
+        { error: error.toString(), stack: error.stack },
+      );
+      return {
+        success: false,
+        message: error.message || `An unexpected error occurred while adding/updating tag '${tagData.name}'.`,
+        tag: undefined,
+      };
+    }
   }
 
   async tagItem(
@@ -1776,11 +1862,47 @@ export class MemoryService {
   ): Promise<z.infer<typeof toolSchemas.TagItemOutputSchema>> {
     const logger = mcpContext.logger || console;
     logger.info(
-      `[MemoryService.tagItem] ${itemType}:${itemId} with Tag:${tagId} in ${repositoryName}:${branch}`,
+      `[MemoryService.tagItem] Attempting for ${itemType}:${itemId} with Tag:${tagId} in ${repositoryName}:${branch}`
     );
-    await this.getKuzuClient(mcpContext, clientProjectRoot);
-    logger.warn('TODO: Implement tagItem with kuzuClient.runWriteQuery');
-    return { success: true, message: 'Item tagged (stub)' };
+
+    try {
+      const kuzuClient = await this.getKuzuClient(mcpContext, clientProjectRoot);
+      const repositoryId = `${repositoryName}:${branch}`;
+
+      const success = await tagOps.tagItemOp(
+        mcpContext,
+        kuzuClient,
+        repositoryId,
+        branch, // Pass branch name explicitly
+        itemId,
+        itemType,
+        tagId
+      );
+
+      if (success) {
+        logger.info(
+          `[MemoryService.tagItem] Successfully tagged ${itemType}:${itemId} with Tag:${tagId} in ${repositoryId}.`
+        );
+        return { success: true, message: 'Item tagged successfully.' };
+      } else {
+        logger.warn(
+          `[MemoryService.tagItem] Failed to tag ${itemType}:${itemId} with Tag:${tagId} in ${repositoryId}. Op returned false (item or tag might not exist, or item not in specified repo/branch).`
+        );
+        return {
+          success: false,
+          message: 'Failed to tag item. Ensure item and tag exist, and item matches repository/branch.'
+        };
+      }
+    } catch (error: any) {
+      logger.error(
+        `[MemoryService.tagItem] Error for ${itemType}:${itemId} with Tag:${tagId} in ${repositoryName}:${branch}: ${error.message}`,
+        { error: error.toString(), stack: error.stack }
+      );
+      return {
+        success: false,
+        message: error.message || 'An unexpected error occurred while tagging the item.'
+      };
+    }
   }
 
   async findItemsByTag(
@@ -1793,11 +1915,38 @@ export class MemoryService {
   ): Promise<z.infer<typeof toolSchemas.FindItemsByTagOutputSchema>> {
     const logger = mcpContext.logger || console;
     logger.info(
-      `[MemoryService.findItemsByTag] Tag:${tagId}, Filter:${itemTypeFilter} in ${repositoryName}:${branch}`,
+      `[MemoryService.findItemsByTag] Attempting for Tag:${tagId}, Filter:${itemTypeFilter || 'All'} in ${repositoryName}:${branch}`
     );
-    await this.getKuzuClient(mcpContext, clientProjectRoot);
-    logger.warn('TODO: Implement findItemsByTag with kuzuClient.runReadOnlyQuery');
-    return { tagId, items: [] };
+
+    try {
+      const kuzuClient = await this.getKuzuClient(mcpContext, clientProjectRoot);
+      const repositoryId = `${repositoryName}:${branch}`;
+
+      // Use 'All' if itemTypeFilter is null, undefined, or empty string
+      const effectiveItemTypeFilter = itemTypeFilter || 'All';
+
+      const items = await tagOps.findItemsByTagOp(
+        mcpContext,
+        kuzuClient,
+        repositoryId,
+        branch, // Pass branch name explicitly
+        tagId,
+        effectiveItemTypeFilter
+      );
+
+      // The items from findItemsByTagOp are already structured Records.
+      // If they needed to be mapped to a more specific schema like GenericNodeSchema,
+      // that mapping would happen here. For now, they are returned as is.
+      logger.info(`[MemoryService.findItemsByTag] Found ${items.length} items for Tag:${tagId} with filter '${effectiveItemTypeFilter}'.`);
+      return { tagId, items: items as z.infer<typeof toolSchemas.GenericNodeSchema>[] }; // Cast to schema type for return
+    } catch (error: any) {
+      logger.error(
+        `[MemoryService.findItemsByTag] Error for Tag:${tagId}, Filter:${itemTypeFilter || 'All'} in ${repositoryName}:${branch}: ${error.message}`,
+        { error: error.toString(), stack: error.stack }
+      );
+      // Rethrowing as per plan, tool handler can decide final response format.
+      throw error;
+    }
   }
 
   async listAllNodeLabels(
