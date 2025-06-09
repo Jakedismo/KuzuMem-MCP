@@ -22,68 +22,78 @@ export interface FileNodeProperties {
 export async function addFileOp(
   mcpContext: EnrichedRequestHandlerExtra,
   kuzuClient: KuzuDBClient,
-  repositoryId: string, // This is expected to be <repoName>:<branchName>
-  branchName: string, // This might seem redundant if repositoryId contains it, but kept for clarity from plan
-  fileData: z.infer<typeof toolSchemas.AddFileInputSchema>
+  repositoryId: string, // <repoName>:<branchName>
+  branchName: string,
+  fileData: {
+    id: string;
+    name: string;
+    path: string;
+    language?: string | null;
+    metrics?: Record<string, any> | null;
+    content_hash?: string | null;
+    mime_type?: string | null;
+    size_bytes?: number | null;
+  },
 ): Promise<z.infer<typeof toolSchemas.FileNodeSchema> | null> {
-  mcpContext.logger.info(`Attempting to add/update file: ${fileData.path} in repository: ${repositoryId}, branch: ${branchName}`);
+  mcpContext.logger.info(
+    `Attempting to add/update File: id=${fileData.id}, path=${fileData.path}, repository=${repositoryId}`,
+  );
+
+  // Serialize metrics to JSON string if present
+  let metricsJson: string | null = null;
+  if (fileData.metrics && typeof fileData.metrics === 'object') {
+    try {
+      metricsJson = JSON.stringify(fileData.metrics);
+    } catch (jsonError) {
+      mcpContext.logger.warn(
+        { error: jsonError, metrics: fileData.metrics, fileId: fileData.id },
+        'Failed to serialize metrics to JSON for file, storing as null',
+      );
+      metricsJson = null;
+    }
+  }
+
+  const currentTime = new Date().toISOString();
 
   const nodeProperties: FileNodeProperties = {
     id: fileData.id,
     name: fileData.name,
     path: fileData.path,
     language: fileData.language || null,
-    metrics_json: fileData.metrics ? JSON.stringify(fileData.metrics) : null,
+    metrics_json: metricsJson,
     content_hash: fileData.content_hash || null,
     mime_type: fileData.mime_type || null,
-    size_bytes: fileData.size_bytes === undefined ? null : fileData.size_bytes,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(), // Will be same as created_at on create
+    size_bytes: fileData.size_bytes || null,
+    created_at: currentTime,
+    updated_at: currentTime,
     repository: repositoryId,
     branch: branchName,
   };
 
-  // Parameters for the Cypher query
-  const queryParams = {
-    id: nodeProperties.id,
-    name: nodeProperties.name,
-    path: nodeProperties.path,
-    language: nodeProperties.language,
-    metrics_json: nodeProperties.metrics_json,
-    content_hash: nodeProperties.content_hash,
-    mime_type: nodeProperties.mime_type,
-    size_bytes: nodeProperties.size_bytes,
-    created_at: nodeProperties.created_at,
-    updated_at: nodeProperties.updated_at, // For ON MATCH, this will be a new timestamp
-    repository: nodeProperties.repository,
-    branch: nodeProperties.branch,
-  };
-
+  // Use MERGE to create or update the File node
   const cypherQuery = `
-    MERGE (f:File {id: $id})
-    ON CREATE SET
-        f.name = $name,
-        f.path = $path,
-        f.language = $language,
-        f.metrics_json = $metrics_json,
-        f.content_hash = $content_hash,
-        f.mime_type = $mime_type,
-        f.size_bytes = $size_bytes,
-        f.created_at = $created_at,
-        f.updated_at = $updated_at,
-        f.repository = $repository,
-        f.branch = $branch
-    ON MATCH SET
-        f.name = $name,
-        f.path = $path,
-        f.language = $language,
-        f.metrics_json = $metrics_json,
-        f.content_hash = $content_hash,
-        f.mime_type = $mime_type,
-        f.size_bytes = $size_bytes,
-        f.updated_at = $updated_at, // Update updated_at timestamp on match
-        f.repository = $repository, // Potentially redundant to set these on match if they define the node's context
-        f.branch = $branch       // but good for ensuring data consistency if a file were somehow re-assigned
+    MERGE (f:File {id: $id, repository: $repository, branch: $branch})
+    ON CREATE SET 
+      f.name = $name,
+      f.path = $path,
+      f.language = $language,
+      f.metrics_json = $metrics_json,
+      f.content_hash = $content_hash,
+      f.mime_type = $mime_type,
+      f.size_bytes = $size_bytes,
+      f.created_at = timestamp($created_at),
+      f.updated_at = timestamp($updated_at),
+      f.repository = $repository,
+      f.branch = $branch
+    ON MATCH SET 
+      f.name = $name,
+      f.path = $path,
+      f.language = $language,
+      f.metrics_json = $metrics_json,
+      f.content_hash = $content_hash,
+      f.mime_type = $mime_type,
+      f.size_bytes = $size_bytes,
+      f.updated_at = timestamp($updated_at)
     RETURN f.id as id,
            f.name as name,
            f.path as path,
@@ -97,6 +107,21 @@ export async function addFileOp(
            f.repository as repository,
            f.branch as branch
   `;
+
+  const queryParams = {
+    id: nodeProperties.id,
+    name: nodeProperties.name,
+    path: nodeProperties.path,
+    language: nodeProperties.language,
+    metrics_json: nodeProperties.metrics_json,
+    content_hash: nodeProperties.content_hash,
+    mime_type: nodeProperties.mime_type,
+    size_bytes: nodeProperties.size_bytes,
+    created_at: nodeProperties.created_at,
+    updated_at: nodeProperties.updated_at,
+    repository: nodeProperties.repository,
+    branch: nodeProperties.branch,
+  };
 
   try {
     // For ON MATCH, we need a different updated_at
@@ -114,20 +139,41 @@ export async function addFileOp(
         paramsForExecution.created_at = currentIsoTime;
     }
 
-
-    const queryResult = await kuzuClient.runWriteQuery(cypherQuery, paramsForExecution);
-    mcpContext.logger.debug({ queryResult, params: paramsForExecution }, 'Kuzu query executed for addFileOp.');
-
+    const queryResult = await kuzuClient.executeQuery(cypherQuery, paramsForExecution);
+    mcpContext.logger.debug(
+      { queryResult, params: paramsForExecution },
+      'Kuzu query executed for addFileOp.',
+    );
 
     if (queryResult && queryResult.length > 0) {
-      const dbRecord = queryResult[0] as any;
+      const dbRecord = queryResult[0] as {
+        id: string;
+        name: string;
+        path: string;
+        language: string | null;
+        metrics_json: string | null;
+        content_hash: string | null;
+        mime_type: string | null;
+        size_bytes: number | null;
+        created_at: string;
+        updated_at: string;
+        repository: string;
+        branch: string;
+      };
 
       let metrics: Record<string, any> | undefined = undefined;
       if (dbRecord.metrics_json) {
         try {
           metrics = JSON.parse(dbRecord.metrics_json);
         } catch (parseError) {
-          mcpContext.logger.error({ error: parseError, metrics_json: dbRecord.metrics_json, fileId: dbRecord.id }, 'Failed to parse metrics_json from DB result for file');
+          mcpContext.logger.error(
+            {
+              error: parseError,
+              metrics_json: dbRecord.metrics_json,
+              fileId: dbRecord.id,
+            },
+            'Failed to parse metrics_json from DB result for file',
+          );
           // Proceed without metrics if parsing fails, or handle as critical error
         }
       }
@@ -161,13 +207,13 @@ export async function addFileOp(
 export async function associateFileWithComponentOp(
   mcpContext: EnrichedRequestHandlerExtra,
   kuzuClient: KuzuDBClient,
-  repositoryId: string, // Expected to be <repoName>:<branchName>
-  branchName: string,   // Explicit branch name
+  repositoryId: string, // <repoName>:<branchName>
+  branchName: string,
   componentId: string,
-  fileId: string
+  fileId: string,
 ): Promise<boolean> {
   mcpContext.logger.info(
-    `Attempting to associate Component {id: ${componentId}} with File {id: ${fileId}} in repository: ${repositoryId}, branch: ${branchName}`
+    `Attempting to associate Component {id: ${componentId}} with File {id: ${fileId}} in repository: ${repositoryId}, branch: ${branchName}`,
   );
 
   const cypherQuery = `
@@ -185,30 +231,18 @@ export async function associateFileWithComponentOp(
   };
 
   try {
-    const queryResult = await kuzuClient.runWriteQuery(cypherQuery, queryParams);
+    const queryResult = await kuzuClient.executeQuery(cypherQuery, queryParams);
     mcpContext.logger.debug({ queryResult, params: queryParams }, 'Kuzu query executed for associateFileWithComponentOp.');
 
-    // If MERGE is successful and the relationship is created or already exists,
-    // Kuzu typically returns the properties of the merged relationship or an empty result for MERGE.
-    // A non-error response and potentially a result indicates success.
-    // If MATCH fails (no component or file found), runWriteQuery might still return an empty array
-    // or throw an error depending on Kuzu's behavior for failed matches in MERGE.
-    // We'll consider it a success if no error is thrown and the result array is not empty,
-    // or if it is empty but this indicates a successful MERGE without return values (common for MERGE).
-    // The key is that an error isn't thrown if nodes aren't found for MATCH.
-    // Kuzu's MERGE behavior: If the MATCH part fails, MERGE does nothing and returns an empty result.
-    // So, we need to check if `queryResult` contains data.
     if (queryResult && queryResult.length > 0) {
       mcpContext.logger.info(
-        `Successfully associated Component {id: ${componentId}} with File {id: ${fileId}}. Relationship details: ${JSON.stringify(queryResult[0])}`
+        `Successfully associated Component ${componentId} with File ${fileId}. Relationship: ${JSON.stringify(queryResult[0])}`
       );
       return true;
     } else {
-      // This case means MATCH failed or MERGE didn't return 'r' (e.g. if relation already existed and query was just RETURN type(r))
-      // For "RETURN r", if the relation is created/matched, it should return the relation.
-      // If MATCH fails, it returns empty.
+      // If MATCH fails (no component or file found), executeQuery might still return an empty array
       mcpContext.logger.warn(
-        `Failed to associate Component {id: ${componentId}} with File {id: ${fileId}}. Component or File not found, or relationship already existed and MERGE did not return it (check query if this is unexpected). Assuming nodes not found if result is empty.`,
+        `Failed to associate Component ${componentId} with File ${fileId}. Component or File not found, or they don't match repository/branch.`,
         { queryParams }
       );
       return false; // Indicates nodes not found or relationship not actively formed by this call
@@ -218,8 +252,6 @@ export async function associateFileWithComponentOp(
       { error, query: cypherQuery, params: queryParams },
       'Error executing associateFileWithComponentOp Cypher query'
     );
-    // Rethrowing allows the service layer to decide on the exact output schema
-    // Alternatively, could return false here. For now, let's rethrow.
-    throw error;
+    throw error; // Rethrow to be handled by the service layer
   }
 }

@@ -1780,20 +1780,15 @@ export class MemoryService {
         logger.warn(
           `[MemoryService.associateFileWithComponent] Failed to associate C:${componentId} with F:${fileId} in ${repositoryId}. Op returned false, possibly due to non-existent nodes.`
         );
-        return {
-          success: false,
-          message: 'Failed to associate file with component. Ensure Component and File exist and match repository/branch.'
-        };
+        throw new Error('Failed to associate file with component. Ensure Component and File exist and match repository/branch.');
       }
     } catch (error: any) {
       logger.error(
         `[MemoryService.associateFileWithComponent] Error for C:${componentId}, F:${fileId} in ${repositoryName}:${branch}: ${error.message}`,
         { error: error.toString(), stack: error.stack }
       );
-      return {
-        success: false,
-        message: error.message || 'An unexpected error occurred during file-component association.'
-      };
+      // Rethrow the error to be handled by the tool handler, as per plan
+      throw error;
     }
   }
 
@@ -1832,22 +1827,15 @@ export class MemoryService {
       } else {
         // This case should ideally be covered by addTagOp throwing an error if it returns null unexpectedly
         logger.error(`[MemoryService.addTag] addTagOp returned null for tag '${tagData.name}' (id: ${tagData.id}). This indicates an issue in the op.`);
-        return {
-          success: false,
-          message: `Failed to add/update tag '${tagData.name}': operation returned no data.`,
-          tag: undefined,
-        };
+        throw new Error(`Failed to add/update tag '${tagData.name}': operation returned no data.`);
       }
     } catch (error: any) {
       logger.error(
         `[MemoryService.addTag] Error processing tag '${tagData.name}' (id: ${tagData.id}): ${error.message}`,
         { error: error.toString(), stack: error.stack },
       );
-      return {
-        success: false,
-        message: error.message || `An unexpected error occurred while adding/updating tag '${tagData.name}'.`,
-        tag: undefined,
-      };
+      // Rethrow the error to be handled by the tool handler, as per plan
+      throw error;
     }
   }
 
@@ -1888,20 +1876,15 @@ export class MemoryService {
         logger.warn(
           `[MemoryService.tagItem] Failed to tag ${itemType}:${itemId} with Tag:${tagId} in ${repositoryId}. Op returned false (item or tag might not exist, or item not in specified repo/branch).`
         );
-        return {
-          success: false,
-          message: 'Failed to tag item. Ensure item and tag exist, and item matches repository/branch.'
-        };
+        throw new Error('Failed to tag item. Ensure item and tag exist, and item matches repository/branch.');
       }
     } catch (error: any) {
       logger.error(
         `[MemoryService.tagItem] Error for ${itemType}:${itemId} with Tag:${tagId} in ${repositoryName}:${branch}: ${error.message}`,
         { error: error.toString(), stack: error.stack }
       );
-      return {
-        success: false,
-        message: error.message || 'An unexpected error occurred while tagging the item.'
-      };
+      // Rethrow the error to be handled by the tool handler, as per plan
+      throw error;
     }
   }
 

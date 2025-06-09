@@ -25,54 +25,49 @@ export async function addTagOp(
 
   const cypherQuery = `
     MERGE (t:Tag {id: $id})
-    ON CREATE SET
-        t.name = $name,
-        t.color = $color,
-        t.description = $description,
-        t.created_at = $created_at
-    ON MATCH SET
-        t.name = $name,
-        t.color = $color,
-        t.description = $description
+    ON CREATE SET 
+      t.name = $name,
+      t.color = $color,
+      t.description = $description,
+      t.created_at = timestamp($created_at)
+    ON MATCH SET 
+      t.name = $name,
+      t.color = $color,
+      t.description = $description
     RETURN t.id as id, t.name as name, t.color as color, t.description as description, t.created_at as created_at
   `;
 
   try {
-    const queryResult = await kuzuClient.runWriteQuery(cypherQuery, properties);
+    const queryResult = await kuzuClient.executeQuery(cypherQuery, properties);
     mcpContext.logger.debug({ queryResult, params: properties }, 'Kuzu query executed for addTagOp.');
 
     if (queryResult && queryResult.length > 0) {
-      const dbRecord = queryResult[0] as any;
+      const dbRecord = queryResult[0] as {
+        id: string;
+        name: string;
+        color: string | null;
+        description: string | null;
+        created_at: string;
+      };
 
-      const createdAt = dbRecord.created_at instanceof Date
-                        ? dbRecord.created_at.toISOString()
-                        : String(dbRecord.created_at);
-
-      // Ensure the returned object matches the TagNodeSchema structure
       const tagNode: z.infer<typeof toolSchemas.TagNodeSchema> = {
         id: dbRecord.id,
         name: dbRecord.name,
-        color: dbRecord.color, // Will be null if not set, which is fine by schema (optional)
-        description: dbRecord.description, // Will be null if not set
-        created_at: createdAt,
-        // repository and branch are not part of the Tag node itself, as tags are global.
-        // The toolSchemas.TagNodeSchema might include these if it's a generic node schema.
-        // For the purpose of this op, we return what's stored on the Tag node.
-        // If TagNodeSchema mandatorily requires repo/branch, this would need adjustment or schema review.
-        // Based on the prompt, tags are global, so repo/branch are not intrinsic properties of the tag itself.
+        color: dbRecord.color || null,
+        description: dbRecord.description || null,
+        created_at: dbRecord.created_at,
       };
-      mcpContext.logger.info({ tagNode }, `Tag ${tagData.name} (id: ${tagData.id}) added/updated successfully.`);
+      mcpContext.logger.info(
+        `Tag '${tagNode.name}' (id: ${tagNode.id}) processed successfully.`
+      );
       return tagNode;
     } else {
-      mcpContext.logger.error(
-        { queryParamsSent: properties, result: queryResult },
-        'Kuzu query for addTagOp executed but returned no result or an empty result set. This is unexpected for MERGE...RETURN.'
-      );
-      throw new Error(`Failed to create or update tag ${tagData.name}: No data returned from database.`);
+      mcpContext.logger.warn({ queryParamsSent: properties, result: queryResult }, 'Kuzu query for addTagOp executed but returned no result or an empty result set.');
+      return null;
     }
   } catch (error) {
     mcpContext.logger.error({ error, query: cypherQuery, params: properties }, 'Error executing addTagOp Cypher query');
-    throw error;
+    throw error; // Rethrow to be handled by the service layer
   }
 }
 
@@ -80,7 +75,7 @@ export async function tagItemOp(
   mcpContext: EnrichedRequestHandlerExtra,
   kuzuClient: KuzuDBClient,
   repositoryId: string, // <repoName>:<branchName>
-  branchName: string,   // Explicit branch name
+  branchName: string,
   itemId: string,
   itemType: 'Component' | 'Decision' | 'Rule' | 'File' | 'Context',
   tagId: string
@@ -120,7 +115,7 @@ export async function tagItemOp(
   };
 
   try {
-    const queryResult = await kuzuClient.runWriteQuery(cypherQuery, queryParams);
+    const queryResult = await kuzuClient.executeQuery(cypherQuery, queryParams);
     mcpContext.logger.debug({ queryResult, params: queryParams }, 'Kuzu query executed for tagItemOp.');
 
     if (queryResult && queryResult.length > 0) {
@@ -181,7 +176,7 @@ export async function findItemsByTagOp(
   cypherQuery += ` RETURN item.id AS id, labels(item)[0] AS nodeLabel, item{.*} AS properties`;
 
   try {
-    const queryResult = await kuzuClient.runReadOnlyQuery(cypherQuery, queryParams);
+    const queryResult = await kuzuClient.executeQuery(cypherQuery, queryParams);
     mcpContext.logger.debug({ resultsCount: queryResult?.length, params: queryParams }, 'Kuzu query executed for findItemsByTagOp.');
 
     if (!queryResult) {
@@ -193,15 +188,16 @@ export async function findItemsByTagOp(
       // The 'properties' field will contain all properties of the 'item' node.
       // We also explicitly get 'id' and 'nodeLabel' for convenience and consistency.
       return {
-        id: record.id, // Explicitly selected id
-        type: record.nodeLabel, // Explicitly selected label
-        ...(record.properties || {}), // Spread all other properties from the item node
+        id: record.id,
+        nodeLabel: record.nodeLabel,
+        properties: record.properties,
       };
     });
 
-    mcpContext.logger.info(`Found ${items.length} items for Tag {id: ${tagId}} with filter '${itemTypeFilter}'.`);
+    mcpContext.logger.info(
+      `Found ${items.length} items tagged with Tag {id: ${tagId}} with filter '${itemTypeFilter}'.`
+    );
     return items;
-
   } catch (error) {
     mcpContext.logger.error(
       { error, query: cypherQuery, params: queryParams },
