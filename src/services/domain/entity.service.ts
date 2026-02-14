@@ -1057,25 +1057,25 @@ export class EntityService extends CoreService implements IEntityService {
 
     try {
       const kuzuClient = await this.getKuzuClient(mcpContext, clientProjectRoot);
-
-      // Find all entities tagged with the specified tag
-      const findQuery = `
-        MATCH (n)-[:TAGGED_WITH]->(t:Tag {id: $tagId})
-        WHERE
-          (n.repository = $repositoryName AND n.branch = $branch) OR
-          (n.graph_unique_id STARTS WITH $repoPrefix)
-        RETURN n.id as id, n.name as name, labels(n)[0] as type
-      `;
-
       const repoPrefix = `${repositoryName}:${branch}:`;
-      const entities = await kuzuClient.executeQuery(findQuery, {
-        tagId,
-        repositoryName,
-        branch,
-        repoPrefix,
-      });
 
       if (options.dryRun) {
+        // Find all entities tagged with the specified tag
+        const findQuery = `
+          MATCH (n)-[:TAGGED_WITH]->(t:Tag {id: $tagId})
+          WHERE
+            (n.repository = $repositoryName AND n.branch = $branch) OR
+            (n.graph_unique_id STARTS WITH $repoPrefix)
+          RETURN n.id as id, n.name as name, label(n) as type
+        `;
+
+        const entities = await kuzuClient.executeQuery(findQuery, {
+          tagId,
+          repositoryName,
+          branch,
+          repoPrefix,
+        });
+
         logger.info(
           `[EntityService.bulkDeleteByTag] Dry run: Would delete ${entities.length} entities tagged with ${tagId}`,
         );
@@ -1086,33 +1086,26 @@ export class EntityService extends CoreService implements IEntityService {
         };
       }
 
-      // Delete entities one by one to handle different entity types
-      let deletedCount = 0;
-      for (const entity of entities) {
-        try {
-          const deleteQuery = `
-            MATCH (n:${entity.type} {id: $id})
-            WHERE
-              (n.repository = $repositoryName AND n.branch = $branch) OR
-              (n.graph_unique_id STARTS WITH $repoPrefix)
-            DETACH DELETE n
-            RETURN 1 as deleted
-          `;
+      // Bulk delete all entities tagged with the tag
+      // Using a single query to avoid N+1 problem and improve performance
+      const deleteQuery = `
+        MATCH (n)-[:TAGGED_WITH]->(t:Tag {id: $tagId})
+        WHERE
+          (n.repository = $repositoryName AND n.branch = $branch) OR
+          (n.graph_unique_id STARTS WITH $repoPrefix)
+        WITH n, label(n) as type, n.id as id, n.name as name
+        DETACH DELETE n
+        RETURN type, id, name
+      `;
 
-          const result = await kuzuClient.executeQuery(deleteQuery, {
-            id: entity.id,
-            repositoryName,
-            branch,
-            repoPrefix,
-          });
+      const result = await kuzuClient.executeQuery(deleteQuery, {
+        tagId,
+        repositoryName,
+        branch,
+        repoPrefix,
+      });
 
-          if (result.length > 0) {
-            deletedCount++;
-          }
-        } catch (error: any) {
-          logger.warn(`Failed to delete ${entity.type} ${entity.id}: ${error.message}`);
-        }
-      }
+      const deletedCount = result.length;
 
       logger.info(
         `[EntityService.bulkDeleteByTag] Deleted ${deletedCount} entities tagged with ${tagId} in ${repositoryName}:${branch}`,
@@ -1120,7 +1113,7 @@ export class EntityService extends CoreService implements IEntityService {
 
       return {
         count: deletedCount,
-        entities: entities.map((e: any) => ({ type: e.type, id: e.id, name: e.name })),
+        entities: result.map((e: any) => ({ type: e.type, id: e.id, name: e.name })),
         warnings: [],
       };
     } catch (error: any) {
@@ -1131,7 +1124,6 @@ export class EntityService extends CoreService implements IEntityService {
       throw error;
     }
   }
-
   async bulkDeleteByBranch(
     mcpContext: ToolHandlerContext,
     clientProjectRoot: string,
