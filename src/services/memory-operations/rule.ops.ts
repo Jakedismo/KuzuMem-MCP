@@ -152,3 +152,64 @@ export async function deleteRuleOp(
   logger.info(`[rule.ops.deleteRuleOp] Deleted ${deletedCount} rule(s) with ID ${ruleId}`);
   return deletedCount > 0;
 }
+
+
+export async function upsertRulesOp(
+  mcpContext: ToolHandlerContext,
+  repositoryName: string,
+  branch: string,
+  rulesData: RuleInput[],
+  repositoryRepo: RepositoryRepository,
+  ruleRepo: RuleRepository,
+): Promise<Rule[]> {
+  const logger = mcpContext.logger;
+
+  const repository = await repositoryRepo.findByName(repositoryName, branch);
+  if (!repository || !repository.id) {
+    logger.warn(`[rule.ops.upsertRulesOp] Repository not found: ${repositoryName}/${branch}`);
+    return [];
+  }
+
+  const rulesToUpsert: Rule[] = rulesData.map(ruleData => ({
+    id: ruleData.id,
+    repository: repository.id,
+    branch: branch,
+    name: ruleData.name,
+    created: ruleData.created,
+    triggers: ruleData.triggers || null,
+    content: ruleData.content || null,
+    status: ruleData.status || 'active',
+    created_at: new Date(),
+    updated_at: new Date(),
+  }));
+
+  logger.debug(
+    `[rule.ops.upsertRulesOp] Calling ruleRepo.upsertRules for ${rulesToUpsert.length} rules in repo ${repository.id}`,
+  );
+
+  const upsertedRules = await ruleRepo.upsertRules(rulesToUpsert);
+
+  logger.info(
+    `[rule.ops.upsertRulesOp] ${upsertedRules.length} rules upserted successfully in ${repositoryName}:${branch}.`,
+  );
+
+  return upsertedRules.map(r => normalizeRule(r, repositoryName, branch));
+}
+
+export async function getAllRuleIdsOp(
+  mcpContext: ToolHandlerContext,
+  repositoryName: string,
+  branch: string,
+  repositoryRepo: RepositoryRepository,
+  ruleRepo: RuleRepository,
+): Promise<string[]> {
+  const logger = mcpContext.logger;
+
+  const repository = await repositoryRepo.findByName(repositoryName, branch);
+  if (!repository || !repository.id) {
+    logger.warn(`[rule.ops.getAllRuleIdsOp] Repository not found: ${repositoryName}/${branch}`);
+    return [];
+  }
+
+  return await ruleRepo.getAllRuleIds(repository.id, branch);
+}

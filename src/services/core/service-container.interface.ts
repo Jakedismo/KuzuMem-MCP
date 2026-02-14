@@ -141,6 +141,19 @@ export interface IDecisionService {
 
 // Rule service interface - handles rule-specific operations
 export interface IRuleService {
+  upsertRules(
+    mcpContext: ToolHandlerContext,
+    clientProjectRoot: string,
+    repositoryName: string,
+    rules: any[],
+    branch?: string,
+  ): Promise<any>;
+  getAllRuleIds(
+    mcpContext: ToolHandlerContext,
+    clientProjectRoot: string,
+    repositoryName: string,
+    branch?: string,
+  ): Promise<string[]>;
   upsertRule(
     mcpContext: ToolHandlerContext,
     clientProjectRoot: string,

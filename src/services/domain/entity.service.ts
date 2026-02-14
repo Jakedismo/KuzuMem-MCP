@@ -1286,4 +1286,80 @@ export class EntityService extends CoreService implements IEntityService {
       throw error;
     }
   }
+
+  async upsertRules(
+    mcpContext: ToolHandlerContext,
+    clientProjectRoot: string,
+    repositoryName: string,
+    rules: RuleInput[],
+    branch: string = 'main',
+  ): Promise<Rule[]> {
+    const logger = mcpContext.logger || console;
+    if (!this.repositoryProvider) {
+      logger.error('[EntityService.upsertRules] RepositoryProvider not initialized');
+      throw new Error('RepositoryProvider not initialized');
+    }
+
+    try {
+      const repositoryRepo = this.repositoryProvider.getRepositoryRepository(clientProjectRoot);
+      const ruleRepo = this.repositoryProvider.getRuleRepository(clientProjectRoot);
+
+      const rulesResult = await ruleOps.upsertRulesOp(
+        mcpContext,
+        repositoryName,
+        branch,
+        rules,
+        repositoryRepo,
+        ruleRepo,
+      );
+
+      logger.info(
+        `[EntityService.upsertRules] ${rulesResult.length} rules upserted successfully in ${repositoryName}:${branch}`,
+      );
+      return rulesResult;
+    } catch (error: any) {
+      logger.error(
+        `[EntityService.upsertRules] Error upserting rules in ${repositoryName}:${branch}: ${error.message}`,
+        { error: error.toString() },
+      );
+      throw error;
+    }
+  }
+
+  async getAllRuleIds(
+    mcpContext: ToolHandlerContext,
+    clientProjectRoot: string,
+    repositoryName: string,
+    branch: string = 'main',
+  ): Promise<string[]> {
+    const logger = mcpContext.logger || console;
+    if (!this.repositoryProvider) {
+      logger.error('[EntityService.getAllRuleIds] RepositoryProvider not initialized');
+      throw new Error('RepositoryProvider not initialized');
+    }
+
+    try {
+      const repositoryRepo = this.repositoryProvider.getRepositoryRepository(clientProjectRoot);
+      const ruleRepo = this.repositoryProvider.getRuleRepository(clientProjectRoot);
+
+      const ruleIds = await ruleOps.getAllRuleIdsOp(
+        mcpContext,
+        repositoryName,
+        branch,
+        repositoryRepo,
+        ruleRepo,
+      );
+
+      logger.debug(
+        `[EntityService.getAllRuleIds] Retrieved ${ruleIds.length} rule IDs for ${repositoryName}:${branch}`,
+      );
+      return ruleIds;
+    } catch (error: any) {
+      logger.error(
+        `[EntityService.getAllRuleIds] Error retrieving rule IDs in ${repositoryName}:${branch}: ${error.message}`,
+        { error: error.toString() },
+      );
+      throw error;
+    }
+  }
 }
