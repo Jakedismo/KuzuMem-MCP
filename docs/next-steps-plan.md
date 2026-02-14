@@ -13,7 +13,6 @@
 ### 1.1 MCP Protocol Implementation
 
 - [ ] **Create MCP server entry point** (`src/mcp-server.ts`)
-
   - Implement MCP protocol handlers
   - Set up stdio communication
   - Handle MCP initialization and capabilities
@@ -31,7 +30,6 @@
 ### 1.2 Request/Response Handling
 
 - [ ] **Implement tool handlers** (`src/mcp/handlers/`)
-
   - Map MCP tool calls to MemoryService operations
   - Handle parameter validation and transformation
   - Format responses according to MCP protocol
@@ -45,7 +43,6 @@
 ### 1.3 Configuration & Setup
 
 - [ ] **Update package.json**
-
   - Add MCP server entry point
   - Update scripts for MCP server mode
   - Add MCP-related dependencies if needed
@@ -62,7 +59,6 @@
 ### 2.1 Decision and Rule Entities
 
 - [ ] **Implement Decision management**
-
   - Decision CRUD operations
   - Decision-Component relationships (AFFECTS)
   - Decision querying and filtering
@@ -75,7 +71,6 @@
 ### 2.2 Context Management
 
 - [ ] **Context entity implementation**
-
   - Context creation and storage
   - Context-Entity relationships (CONTEXT_OF)
   - Session/conversation context tracking
@@ -100,7 +95,6 @@
 ### 3.1 Performance Optimization
 
 - [ ] **Query optimization**
-
   - Index analysis and optimization
   - Query performance profiling
   - Batch operation support
@@ -114,7 +108,6 @@
 ### 3.2 Error Recovery & Resilience
 
 - [ ] **Enhanced error handling**
-
   - Graceful degradation strategies
   - Automatic retry mechanisms
   - Database connection recovery
@@ -141,7 +134,6 @@
 ### 4.1 Comprehensive Testing
 
 - [ ] **Unit test expansion**
-
   - Repository layer tests
   - Service layer tests
   - MCP handler tests

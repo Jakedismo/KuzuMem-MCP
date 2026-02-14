@@ -278,7 +278,8 @@ export interface IBulkOperationsService {
 
 // Unified entity service interface - composes all entity services
 export interface IEntityService
-  extends IComponentService,
+  extends
+    IComponentService,
     IDecisionService,
     IRuleService,
     IFileService,
