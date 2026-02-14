@@ -274,19 +274,21 @@ program
 // Helper functions (processDirectory, parseFilePath, getYamlType) remain unchanged if they are not directly calling MemoryService
 // ... (keep existing helper functions)
 async function processDirectory(dir: string): Promise<Record<string, string>> {
-  const files: Record<string, string> = {};
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      const subFiles = await processDirectory(fullPath);
-      Object.assign(files, subFiles);
-    } else if (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')) {
-      const content = await fs.readFile(fullPath, 'utf-8');
-      files[fullPath] = content;
-    }
-  }
-  return files;
+  const results = await Promise.all(
+    entries.map(async (entry) => {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const subFiles = await processDirectory(fullPath);
+        return subFiles;
+      } else if (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')) {
+        const content = await fs.readFile(fullPath, 'utf-8');
+        return { [fullPath]: content };
+      }
+      return {};
+    })
+  );
+  return results.reduce((acc, curr) => Object.assign(acc, curr), {});
 }
 
 function parseFilePath(filePath: string): { type: string | null; id: string | null } {
