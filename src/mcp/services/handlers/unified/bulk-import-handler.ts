@@ -228,36 +228,49 @@ export const bulkImportHandler: SdkToolHandler = async (params, context, memoryS
         let failed = 0;
         const errors: Array<{ id: string; error: string }> = [];
         const entityService = await memoryService.entity;
+        // Batch implementation with existing ID check
+        let existingRuleIds = new Set<string>();
+        if (!overwrite) {
+            try {
+                const ids = await entityService.getAllRuleIds(context, clientProjectRoot, repository, branch);
+                existingRuleIds = new Set(ids);
+            } catch (error) {
+                context.logger.warn(`Failed to fetch existing rule IDs, proceeding without check:`, error);
+            }
+        }
 
+        const rulesToImport: any[] = [];
         for (const rule of rules) {
-          try {
-            // Check if rule already exists
-            if (!overwrite) {
-              const existing = await entityService.getRule(
-                context,
-                clientProjectRoot,
-                repository,
-                branch,
-                rule.id,
-              );
-              if (existing) {
+            if (!overwrite && existingRuleIds.has(rule.id)) {
                 skipped++;
                 continue;
-              }
             }
-
-            // Import the rule
-            await entityService.upsertRule(context, clientProjectRoot, repository, rule, branch);
-            imported++;
-          } catch (error) {
-            context.logger.warn(`Failed to import rule ${rule.id}:`, error);
-            failed++;
-            errors.push({
-              id: rule.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
+            rulesToImport.push(rule);
         }
+
+        if (rulesToImport.length > 0) {
+            try {
+                await entityService.upsertRules(context, clientProjectRoot, repository, rulesToImport, branch);
+                imported += rulesToImport.length;
+            } catch (error) {
+                context.logger.error(`Batch import failed, falling back to individual import`, error);
+
+                // Fallback to individual import if batch fails
+                for (const rule of rulesToImport) {
+                    try {
+                        await entityService.upsertRule(context, clientProjectRoot, repository, rule, branch);
+                        imported++;
+                    } catch (e: any) {
+                        failed++;
+                        errors.push({
+                            id: rule.id,
+                            error: e instanceof Error ? e.message : String(e),
+                        });
+                    }
+                }
+            }
+        }
+
 
         await context.sendProgress({
           status: 'complete',

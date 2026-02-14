@@ -213,4 +213,111 @@ export class RuleRepository {
       return [];
     }
   }
+
+  /**
+   * Batch upsert rules.
+   */
+  async upsertRules(rules: Rule[]): Promise<Rule[]> {
+    if (rules.length === 0) {
+      return [];
+    }
+
+    // Assume all rules belong to the same repository and branch
+    const repositoryNodeId = rules[0].repository;
+    const branch = rules[0].branch;
+    const [logicalRepositoryName] = repositoryNodeId.split(':');
+    const now = new Date();
+
+    const rulesData = rules.map(rule => {
+      const graphUniqueId = formatGraphUniqueId(logicalRepositoryName, branch, rule.id);
+      return {
+        id: rule.id,
+        graphUniqueId: graphUniqueId,
+        title: rule.name,
+        description: (rule as any).description || '',
+        scope: (rule as any).scope || 'component',
+        severity: (rule as any).severity || 'medium',
+        category: (rule as any).category || 'general',
+        branch: branch,
+        status: (rule as any).status || 'active',
+        created_at: now,
+        updated_at: now,
+        repositoryNodeId: repositoryNodeId
+      };
+    });
+
+    const query = `
+      UNWIND $rules AS ruleData
+      MERGE (repo:Repository {id: ruleData.repositoryNodeId})
+      ON CREATE SET repo.name = ruleData.repositoryNodeId, repo.created_at = $now
+      MERGE (r:Rule {id: ruleData.id, graph_unique_id: ruleData.graphUniqueId})
+      ON CREATE SET
+        r.title = ruleData.title,
+        r.description = ruleData.description,
+        r.scope = ruleData.scope,
+        r.severity = ruleData.severity,
+        r.category = ruleData.category,
+        r.branch = ruleData.branch,
+        r.status = ruleData.status,
+        r.created_at = $now,
+        r.updated_at = $now
+      ON MATCH SET
+        r.title = ruleData.title,
+        r.description = ruleData.description,
+        r.scope = ruleData.scope,
+        r.severity = ruleData.severity,
+        r.category = ruleData.category,
+        r.branch = ruleData.branch,
+        r.status = ruleData.status,
+        r.updated_at = $now
+      MERGE (r)-[:PART_OF]->(repo)
+      RETURN r
+    `;
+
+    const params = {
+      rules: rulesData,
+      now: now
+    };
+
+    try {
+      const result = await this.kuzuClient.executeQuery(query, params);
+      if (result && result.length > 0) {
+        return result.map((row: any) =>
+          this.formatKuzuRowToRule(row.r, logicalRepositoryName, branch),
+        );
+      }
+      return [];
+    } catch (error: any) {
+      this.logger.error(
+        `[RuleRepository] Error in upsertRules for batch of ${rules.length}: ${error.message}`,
+        { stack: error.stack },
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get all rule IDs for a repository node and branch.
+   */
+  async getAllRuleIds(repositoryNodeId: string, ruleBranch: string): Promise<string[]> {
+    const query = `
+      MATCH (repo:Repository {id: $repositoryNodeId})<-[:PART_OF]-(r:Rule)
+      WHERE r.branch = $ruleBranch
+      RETURN r.id as id
+    `;
+    const params = { repositoryNodeId, ruleBranch };
+    try {
+      const result = await this.kuzuClient.executeQuery(query, params);
+      if (!result) {
+        return [];
+      }
+      return result.map((row: any) => row.id);
+    } catch (error: any) {
+      this.logger.error(
+        `[RuleRepository] Error in getAllRuleIds for ${repositoryNodeId}, branch ${ruleBranch}: ${error.message}`,
+        { error, stack: error.stack },
+      );
+      return [];
+    }
+  }
 }
