@@ -280,13 +280,11 @@ ALWAYS use conservative strategy unless explicitly told otherwise:
 ## ERROR HANDLING DIRECTIVES
 
 1. **On ANY tool error**:
-
    - Log full error in context
    - DO NOT retry more than once
    - Ask user for guidance
 
 2. **On test failures**:
-
    - Stay in CONSTRUCT phase
    - Fix the issue
    - Re-run validation

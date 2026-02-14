@@ -168,11 +168,8 @@ export class SnapshotService {
         rollbackLogger.debug('Cleared current repository state');
 
         // Restore entities
-        let restoredEntities = 0;
-        for (const entity of snapshot.entities) {
-          await this.restoreEntity(entity, tx);
-          restoredEntities++;
-        }
+        const restoredEntities = snapshot.entities.length;
+        await this.restoreEntitiesBatch(snapshot.entities, tx);
         rollbackLogger.debug(`Restored ${restoredEntities} entities`);
 
         // Restore relationships
@@ -417,7 +414,7 @@ export class SnapshotService {
       const { _id, _label, ...properties } = row.n;
       return {
         properties,
-        nodeLabels: row.nodeLabels,
+        nodeLabels: Array.isArray(row.nodeLabels) ? row.nodeLabels : [row.nodeLabels],
       };
     });
   }
@@ -587,7 +584,13 @@ export class SnapshotService {
     const nodeLabel = entity.nodeLabels?.[0] || 'Entity';
 
     // Build property assignments
-    const properties = entity.properties || {};
+    const rawProperties = entity.properties || {};
+    const properties: any = {};
+    Object.entries(rawProperties).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) {
+        properties[k] = v;
+      }
+    });
     const propertyAssignments = Object.keys(properties)
       .map((key) => `${key}: $${key}`)
       .join(', ');
@@ -597,6 +600,74 @@ export class SnapshotService {
     `;
 
     await executor.executeQuery(query, properties);
+  }
+
+  /**
+   * Restore multiple entities efficiently using UNWIND
+   */
+  private async restoreEntitiesBatch(
+    entities: any[],
+    tx?: { executeQuery: (query: string, params?: Record<string, any>) => Promise<any> },
+  ): Promise<void> {
+    const executor = tx || this.kuzuClient;
+    const grouped = new Map<string, any[]>();
+
+    // Group entities by label
+    for (const entity of entities) {
+      const labels = Array.isArray(entity.nodeLabels) ? entity.nodeLabels : [entity.nodeLabels];
+      const label = labels[0] || 'Entity';
+      if (!grouped.has(label)) {
+        grouped.set(label, []);
+      }
+      grouped.get(label)!.push(entity);
+    }
+
+    // Process each group
+    for (const [label, group] of grouped) {
+      // Collect valid keys (non-null in at least one entity)
+      const validKeys = new Set<string>();
+      for (const entity of group) {
+        const props = entity.properties || {};
+        for (const [key, value] of Object.entries(props)) {
+          if (value !== null && value !== undefined) {
+            validKeys.add(key);
+          }
+        }
+      }
+
+      if (validKeys.size === 0) {
+        // Just create nodes without properties
+        const query = `
+          UNWIND $batch AS item
+          CREATE (n:${label})
+        `;
+        // Pass dummy batch for count
+        await executor.executeQuery(query, { batch: group.map(() => ({})) });
+        continue;
+      }
+
+      // Prepare batch data
+      const batch = group.map((entity) => {
+        const props: any = {};
+        const rawProps = entity.properties || {};
+        for (const key of validKeys) {
+          props[key] = rawProps[key] ?? null;
+        }
+        return props;
+      });
+
+      // Construct UNWIND query
+      const assignments = Array.from(validKeys)
+        .map((key) => `${key}: item.${key}`)
+        .join(', ');
+
+      const query = `
+        UNWIND $batch AS item
+        CREATE (n:${label} {${assignments}})
+      `;
+
+      await executor.executeQuery(query, { batch });
+    }
   }
 
   /**
@@ -640,16 +711,17 @@ export class SnapshotService {
 
     // Check for required fields
     for (const entity of entities) {
-      if (!entity.id) {
+      const entityId = entity.id || entity.properties?.id;
+      if (!entityId) {
         issues.push(`Entity missing required 'id' field`);
       }
       if (!entity.nodeLabels || entity.nodeLabels.length === 0) {
-        issues.push(`Entity ${entity.id} missing node labels`);
+        issues.push(`Entity ${entityId} missing node labels`);
       }
     }
 
     // Check for duplicate IDs
-    const ids = entities.map((e) => e.id).filter(Boolean);
+    const ids = entities.map((e) => e.id || e.properties?.id).filter(Boolean);
     const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
     if (duplicateIds.length > 0) {
       issues.push(`Duplicate entity IDs found: ${duplicateIds.join(', ')}`);

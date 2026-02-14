@@ -413,13 +413,11 @@ The search tool leverages **KuzuDB's Full-Text Search (FTS) extension** to provi
 ### Key Schema Design Elements
 
 1. **Branch-Aware Repository Nodes**
-
    - Repository nodes use a synthetic primary key (`id = name + ':' + branch`)
    - This enables complete isolation of memory between branches
    - All operations filter by both repository name and branch
 
 2. **Rich Relationship Types**
-
    - **HAS\_\* relationships** - Connect repositories to memory entities
    - **DEPENDS_ON** - Track component dependencies (self-referential)
    - **CONTEXT_OF\*** - Link context to components, decisions, and rules
@@ -565,29 +563,24 @@ See [README.md](../README.md) for the complete tool list and usage examples.
 This project follows a multi-layer architecture:
 
 - **Database Layer:**
-
   - KùzuDB graph database with Cypher queries
   - RepositoryFactory for centralized repository creation
   - RepositoryProvider for client-specific repository management
 
 - **Repository Layer:**
-
   - Thread-safe singleton repositories for each memory type
   - Client-aware repository instances
 
 - **Memory Operations Layer:**
-
   - Business logic for memory operations
   - Client project root validation
   - Refactored to use TypeScript types instead of Zod schemas
 
 - **Service Layer:**
-
   - Core orchestration through MemoryService
   - Client project awareness for database operations
 
 - **MCP Layer:**
-
   - Unified tool definitions, handlers, and server implementations
   - Consistent parameter patterns across all tools
   - Client project root propagation
