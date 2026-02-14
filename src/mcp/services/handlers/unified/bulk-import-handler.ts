@@ -83,64 +83,34 @@ export const bulkImportHandler: SdkToolHandler = async (params, context, memoryS
           percent: 10,
         });
 
-        let imported = 0;
-        let skipped = 0;
-        let failed = 0;
-        const errors: Array<{ id: string; error: string }> = [];
         const entityService = await memoryService.entity;
 
-        for (const component of components!) {
-          try {
-            // Check if component already exists
-            if (!overwrite) {
-              const existing = await entityService.getComponent(
-                context,
-                clientProjectRoot,
-                repository,
-                branch,
-                component.id,
-              );
-              if (existing) {
-                skipped++;
-                continue;
-              }
-            }
-
-            // Import the component
-            await entityService.upsertComponent(
-              context,
-              clientProjectRoot,
-              repository,
-              branch,
-              component,
-            );
-            imported++;
-          } catch (error) {
-            context.logger.warn(`Failed to import component ${component.id}:`, error);
-            failed++;
-            errors.push({
-              id: component.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
+        // Use optimized bulk upsert
+        const result = await entityService.bulkUpsertComponents(
+            context,
+            clientProjectRoot,
+            repository,
+            branch,
+            components!,
+            overwrite
+        );
 
         await context.sendProgress({
           status: 'complete',
-          message: `Bulk import complete: ${imported} imported, ${skipped} skipped, ${failed} failed`,
+          message: `Bulk import complete: ${result.upserted} imported, ${result.skipped} skipped, ${result.failed} failed`,
           percent: 100,
           isFinal: true,
         });
 
         return {
           type: 'components',
-          success: true,
-          imported,
-          skipped,
-          failed,
+          success: result.failed === 0,
+          imported: result.upserted,
+          skipped: result.skipped,
+          failed: result.failed,
           total: components!.length,
-          errors: errors.length > 0 ? errors : undefined,
-          message: `Successfully imported ${imported} components, skipped ${skipped}`,
+          errors: result.failed > 0 ? [{ id: 'batch', error: 'Batch failed' }] : undefined,
+          message: `Successfully imported ${result.upserted} components, skipped ${result.skipped}`,
         };
       }
 

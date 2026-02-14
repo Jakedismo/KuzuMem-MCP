@@ -87,6 +87,17 @@ export class ComponentRepository {
     return this.crudRepo.upsertComponent(repositoryNodeId, component);
   }
 
+  /**
+   * Bulk upsert components
+   */
+  async bulkUpsertComponents(
+    repositoryNodeId: string,
+    components: ComponentInput[],
+    overwrite: boolean = true,
+  ): Promise<{ upserted: number; skipped: number }> {
+    return this.crudRepo.bulkUpsertComponents(repositoryNodeId, components, overwrite);
+  }
+
   // === Graph Traversal Operations - Delegated to ComponentGraphRepository ===
 
   /**
