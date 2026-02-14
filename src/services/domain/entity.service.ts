@@ -9,6 +9,7 @@ import {
   RuleInput,
   Tag,
   TagInput,
+  ComponentInput,
 } from '../../types';
 import { CoreService } from '../core/core.service';
 import { IEntityService, IServiceContainer } from '../core/service-container.interface';
@@ -66,6 +67,48 @@ export class EntityService extends CoreService implements IEntityService {
     } catch (error: any) {
       logger.error(
         `[EntityService.upsertComponent] Error upserting component ${componentData.id} in ${repositoryName}:${branch}: ${error.message}`,
+        { error: error.toString() },
+      );
+      throw error;
+    }
+  }
+
+  async bulkUpsertComponents(
+    mcpContext: ToolHandlerContext,
+    clientProjectRoot: string,
+    repositoryName: string,
+    branch: string,
+    components: ComponentInput[],
+    overwrite: boolean = true,
+  ): Promise<{ upserted: number; skipped: number; failed: number }> {
+    const logger = mcpContext.logger || console;
+    if (!this.repositoryProvider) {
+      logger.error('[EntityService.bulkUpsertComponents] RepositoryProvider not initialized');
+      throw new Error('RepositoryProvider not initialized');
+    }
+
+    try {
+      const kuzuClient = await this.getKuzuClient(mcpContext, clientProjectRoot);
+      const repositoryRepo = this.repositoryProvider.getRepositoryRepository(clientProjectRoot);
+      const componentRepo = this.repositoryProvider.getComponentRepository(clientProjectRoot);
+
+      const result = await componentOps.bulkUpsertComponentOp(
+        mcpContext,
+        repositoryName,
+        branch,
+        components,
+        repositoryRepo,
+        componentRepo,
+        overwrite
+      );
+
+      logger.info(
+        `[EntityService.bulkUpsertComponents] Batch result: ${result.upserted} upserted, ${result.skipped} skipped, ${result.failed} failed in ${repositoryName}:${branch}`,
+      );
+      return result;
+    } catch (error: any) {
+      logger.error(
+        `[EntityService.bulkUpsertComponents] Error in bulk upsert for ${repositoryName}:${branch}: ${error.message}`,
         { error: error.toString() },
       );
       throw error;

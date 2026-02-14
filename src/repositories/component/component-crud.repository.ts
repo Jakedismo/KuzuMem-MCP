@@ -250,4 +250,226 @@ export class ComponentCrudRepository extends BaseComponentRepository {
       throw error;
     }
   }
+
+  /**
+   * Bulk upsert components
+   */
+  async bulkUpsertComponents(
+    repositoryNodeId: string,
+    components: ComponentInput[],
+    overwrite: boolean = true,
+  ): Promise<{ upserted: number; skipped: number }> {
+    const logicalRepositoryName = this.validateRepositoryNodeId(
+      repositoryNodeId,
+      'bulkUpsertComponents',
+    );
+    const now = new Date();
+
+    if (components.length === 0) {
+      return { upserted: 0, skipped: 0 };
+    }
+
+    // Filter nulls or invalid
+    let validComponents = components.filter((c) => c && c.id);
+    let skipped = 0;
+
+    // Prepare metadata
+    const componentMeta = validComponents.map((c) => {
+      const branch = String(c.branch || 'main');
+      return {
+        ...c,
+        branch,
+        graphUniqueId: this.createGraphUniqueId(logicalRepositoryName, branch, String(c.id)),
+      };
+    });
+
+    // Handle skipped items (check existence) if not overwriting
+    if (!overwrite) {
+      const gids = componentMeta.map((c) => c.graphUniqueId);
+      const query = `
+        UNWIND $gids AS gid
+        MATCH (c:Component {graph_unique_id: gid})
+        RETURN c.graph_unique_id as id
+      `;
+
+      try {
+        const existingResult = await this.executeQueryWithLogging(query, { gids }, 'bulkUpsert-check');
+        const existingIds = new Set(existingResult.map((r: any) => r.id));
+
+        if (existingIds.size > 0) {
+           const newComponents = [];
+           for (const meta of componentMeta) {
+               if (existingIds.has(meta.graphUniqueId)) {
+                   skipped++;
+               } else {
+                   newComponents.push(meta);
+               }
+           }
+           validComponents = newComponents;
+        }
+      } catch (error) {
+        this.logger.error('Error checking existing components in bulk upsert', error);
+        throw error;
+      }
+    } else {
+        validComponents = componentMeta;
+    }
+
+    if (validComponents.length === 0) {
+        return { upserted: 0, skipped };
+    }
+
+    // Prepare arrays for bulk insert
+    const count = validComponents.length;
+    // Cast to any to access graphUniqueId added in previous step
+    const comps = validComponents as any[];
+
+    const ids = comps.map(c => String(c.id));
+    const names = comps.map(c => c.name);
+    const kinds = comps.map(c => c.kind || 'Unknown');
+    const statuses = comps.map(c => c.status || 'active');
+    const branches = comps.map(c => c.branch);
+    const repositories = comps.map(_ => logicalRepositoryName);
+    const graphUniqueIds = comps.map(c => c.graphUniqueId);
+
+    try {
+        await this.kuzuClient.transaction(async (tx) => {
+           // Upsert components and connect to repository
+           // Optimized query: Merge repo once, then unwind components
+           // Using  for created_at/updated_at to avoid casting issues with lists
+           const query = `
+             MERGE (repo:Repository {id: $repositoryId})
+             ON CREATE SET repo.name = $repoName, repo.created_at = $now
+
+             WITH repo
+             UNWIND range(1, $count) AS idx
+
+             MERGE (c:Component {graph_unique_id: $graphUniqueIds[idx]})
+             ON CREATE SET
+                c.id = $ids[idx],
+                c.name = $names[idx],
+                c.kind = $kinds[idx],
+                c.status = $statuses[idx],
+                c.branch = $branches[idx],
+                c.repository = $repositories[idx],
+                c.created_at = $now,
+                c.updated_at = $now
+             ON MATCH SET
+                c.id = $ids[idx],
+                c.name = $names[idx],
+                c.kind = $kinds[idx],
+                c.status = $statuses[idx],
+                c.branch = $branches[idx],
+                c.repository = $repositories[idx],
+                c.created_at = $now,
+                c.updated_at = $now
+
+             MERGE (c)-[:PART_OF]->(repo)
+           `;
+
+           await tx.executeQuery(query, {
+             count,
+             repositoryId: repositoryNodeId,
+             repoName: logicalRepositoryName,
+             now,
+             ids,
+             graphUniqueIds,
+             names,
+             kinds,
+             statuses,
+             branches,
+             repositories
+           });
+
+           // Flatten dependencies and identify components with deps
+           const depPairs: {source: string, target: string, depId: string, branch: string}[] = [];
+           const componentsWithNewDeps = new Set<string>();
+
+           comps.forEach(c => {
+               const hasDeps = (c.depends_on && c.depends_on.length > 0) || (c.dependsOn && c.dependsOn.length > 0);
+               if (hasDeps) {
+                   componentsWithNewDeps.add(c.graphUniqueId);
+               }
+
+               if (c.depends_on && c.depends_on.length > 0) {
+                   c.depends_on.forEach((depId: string) => {
+                       const targetGid = this.createGraphUniqueId(logicalRepositoryName, c.branch, depId);
+                       depPairs.push({
+                           source: c.graphUniqueId,
+                           target: targetGid,
+                           depId: depId,
+                           branch: c.branch
+                       });
+                   });
+               }
+               // Also check 'dependsOn' alternative casing
+               if (c.dependsOn && c.dependsOn.length > 0) {
+                   c.dependsOn.forEach((depId: string) => {
+                       const targetGid = this.createGraphUniqueId(logicalRepositoryName, c.branch, depId);
+                       depPairs.push({
+                           source: c.graphUniqueId,
+                           target: targetGid,
+                           depId: depId,
+                           branch: c.branch
+                       });
+                   });
+               }
+           });
+
+           // Cleanup existing dependencies for components that provided new dependencies
+           // This maintains consistency with single upsert behavior (replace if provided)
+           if (componentsWithNewDeps.size > 0) {
+               const gidsToClean = Array.from(componentsWithNewDeps);
+               await tx.executeQuery(`
+                 UNWIND $gidsToClean AS gid
+                 MATCH (c:Component {graph_unique_id: gid})-[r:DEPENDS_ON]->()
+                 DELETE r
+               `, { gidsToClean });
+           }
+
+           if (depPairs.length > 0) {
+               const sourceGids = depPairs.map(d => d.source);
+               const targetGids = depPairs.map(d => d.target);
+               const targetIds = depPairs.map(d => d.depId);
+               const targetBranches = depPairs.map(d => d.branch);
+
+               // Create placeholders for dependencies
+                const placeholderQuery = `
+                 UNWIND range(1, $count) AS idx
+                 MERGE (dep:Component {graph_unique_id: $targetGids[idx]})
+                 ON CREATE SET
+                    dep.id = $targetIds[idx],
+                    dep.name = 'Placeholder for ' + $targetIds[idx],
+                    dep.status = 'planned',
+                    dep.branch = $targetBranches[idx]
+               `;
+               await tx.executeQuery(placeholderQuery, {
+                   count: depPairs.length,
+                   targetGids,
+                   targetIds,
+                   targetBranches
+               });
+
+               // Create relationships
+               const relQuery = `
+                 UNWIND range(1, $count) AS idx
+                 MATCH (c:Component {graph_unique_id: $sourceGids[idx]})
+                 MATCH (d:Component {graph_unique_id: $targetGids[idx]})
+                 MERGE (c)-[:DEPENDS_ON]->(d)
+               `;
+
+               await tx.executeQuery(relQuery, {
+                   count: depPairs.length,
+                   sourceGids,
+                   targetGids
+               });
+           }
+        });
+
+        return { upserted: count, skipped };
+    } catch (error: any) {
+        this.logger.error(`ERROR in bulkUpsertComponents`, error);
+        throw error;
+    }
+  }
 }

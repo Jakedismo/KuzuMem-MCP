@@ -67,6 +67,68 @@ export async function upsertComponentOp(
 }
 
 /**
+ * Bulk creates or updates components in a repository.
+ *
+ * @param mcpContext - The MCP server request context.
+ * @param repositoryName - The name of the repository.
+ * @param branch - The branch of the repository.
+ * @param componentsData - Array of data for the components to be upserted.
+ * @param repositoryRepo - Instance of RepositoryRepository.
+ * @param componentRepo - Instance of ComponentRepository.
+ * @param overwrite - Whether to overwrite existing components.
+ * @returns A Promise resolving to stats about the operation.
+ */
+export async function bulkUpsertComponentOp(
+  mcpContext: ToolHandlerContext,
+  repositoryName: string,
+  branch: string,
+  componentsData: ComponentInput[],
+  repositoryRepo: RepositoryRepository,
+  componentRepo: ComponentRepository,
+  overwrite: boolean = true,
+): Promise<{ upserted: number; skipped: number; failed: number }> {
+  const logger = mcpContext.logger;
+
+  const repository = await repositoryRepo.findByName(repositoryName, branch);
+  if (!repository || !repository.id) {
+    logger.warn(
+      `[component.ops.bulkUpsertComponentOp] Repository not found: ${repositoryName}/${branch}`,
+    );
+    return { upserted: 0, skipped: 0, failed: componentsData.length };
+  }
+
+  // Normalize inputs
+  const inputsForRepo: ComponentInput[] = componentsData.map(c => ({
+    id: c.id,
+    name: c.name,
+    kind: c.kind,
+    status: c.status || 'active',
+    depends_on: c.depends_on || c.dependsOn || undefined,
+    branch: branch, // Enforce branch
+    repository: repositoryName // Enforce repository name
+  }));
+
+  try {
+    const result = await componentRepo.bulkUpsertComponents(
+      repository.id,
+      inputsForRepo,
+      overwrite
+    );
+
+    logger.info(
+      `[component.ops.bulkUpsertComponentOp] Batch complete: ${result.upserted} upserted, ${result.skipped} skipped in ${repositoryName}:${branch}.`,
+    );
+    return { upserted: result.upserted, skipped: result.skipped, failed: 0 };
+  } catch (error) {
+    logger.error(
+      `[component.ops.bulkUpsertComponentOp] Batch failed in ${repositoryName}:${branch}: ${error}`,
+    );
+    return { upserted: 0, skipped: 0, failed: componentsData.length };
+  }
+}
+
+
+/**
  * Retrieves all upstream dependencies for a component.
  *
  * @param mcpContext - The MCP server request context.
